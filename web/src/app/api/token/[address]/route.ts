@@ -149,26 +149,30 @@ export async function GET(
   let holderIntelligence: Record<string, unknown> | null = null;
   let devIntelligence: Record<string, unknown> | null = null;
   let contractIntelligence: Record<string, unknown> | null = null;
+  let riskIntelligence: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const [flowRes, holderRes, devRes, contractRes] = await Promise.all([
+      const [flowRes, holderRes, devRes, contractRes, riskRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
         fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
         fetch(api + "/v1/contract/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/risk/" + address, { cache: "no-store" }),
       ]);
       if (flowRes.ok) intelligence = await flowRes.json();
       if (holderRes.ok) holderIntelligence = await holderRes.json();
       if (devRes.ok) devIntelligence = await devRes.json();
       if (contractRes.ok) contractIntelligence = await contractRes.json();
+      if (riskRes.ok) riskIntelligence = await riskRes.json();
     }
   } catch {
     intelligence = null;
     holderIntelligence = null;
     devIntelligence = null;
     contractIntelligence = null;
+    riskIntelligence = null;
   }
 
   const holders = holderIntelligence
@@ -306,6 +310,45 @@ export async function GET(
     holders,
     dev,
     contract,
+    risk: riskIntelligence
+      ? {
+          available: true,
+          severity: String(riskIntelligence.severity || "INSUFFICIENT DATA"),
+          deterioration_score:
+            typeof riskIntelligence.deterioration_score === "number"
+              ? riskIntelligence.deterioration_score
+              : null,
+          confidence: String(riskIntelligence.confidence || "LOW"),
+          liquidity_change_pct:
+            typeof riskIntelligence.liquidity_change_pct === "number"
+              ? riskIntelligence.liquidity_change_pct
+              : null,
+          volume_change_pct:
+            typeof riskIntelligence.volume_change_pct === "number"
+              ? riskIntelligence.volume_change_pct
+              : null,
+          holder_change_pct:
+            typeof riskIntelligence.holder_change_pct === "number"
+              ? riskIntelligence.holder_change_pct
+              : null,
+          concentration_change_pct:
+            typeof riskIntelligence.concentration_change_pct === "number"
+              ? riskIntelligence.concentration_change_pct
+              : null,
+          sell_pressure_change:
+            typeof riskIntelligence.sell_pressure_change === "number"
+              ? riskIntelligence.sell_pressure_change
+              : null,
+          exit_impact_change_pct:
+            typeof riskIntelligence.exit_impact_change_pct === "number"
+              ? riskIntelligence.exit_impact_change_pct
+              : null,
+          evidence: Array.isArray(riskIntelligence.evidence)
+            ? riskIntelligence.evidence
+            : [],
+          source: String(riskIntelligence.source || "unavailable"),
+        }
+      : null,
     exit_math: {
       sizes: ladder,
       default_100: exit100,
