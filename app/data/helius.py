@@ -1,12 +1,12 @@
 """
-Helius DAS + RPC helpers.
-Week 1: fetch token metadata via DAS getAsset.
+Helius DAS + Enhanced Transactions helpers.
+Discovery only: metadata, recent token activity, and holder accounts.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -15,27 +15,25 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _rpc_url(api_key: str) -> str:
+    return f"https://mainnet.helius-rpc.com/?api-key={api_key}"
+
+
 async def get_token_metadata(mint: str) -> dict[str, Any]:
-    """
-    Fetch token metadata via Helius DAS getAsset.
-    Returns a normalized dict or empty on failure.
-    """
     settings = get_settings()
     if not settings.helius_api_key:
         logger.warning("HELIUS_API_KEY not set — returning stub metadata")
         return _stub_metadata(mint)
 
-    url = f"https://mainnet.helius-rpc.com/?api-key={settings.helius_api_key}"
     payload = {
         "jsonrpc": "2.0",
         "id": "doubt-get-asset",
         "method": "getAsset",
         "params": {"id": mint},
     }
-
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(_rpc_url(settings.helius_api_key), json=payload)
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -57,6 +55,48 @@ async def get_token_metadata(mint: str) -> dict[str, Any]:
         "supply": token_info.get("supply"),
         "raw": result,
     }
+
+
+async def get_token_accounts(mint: str, limit: int = 1000) -> list[dict[str, Any]]:
+    """Return the first holder page. Aggregation is by owner, not token account."""
+    settings = get_settings()
+    if not settings.helius_api_key:
+        return []
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "doubt-token-accounts",
+        "method": "getTokenAccounts",
+        "params": {"mint": mint, "page": 1, "limit": min(limit, 1000), "displayOptions": {}},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(_rpc_url(settings.helius_api_key), json=payload)
+            resp.raise_for_status()
+            result = (resp.json().get("result") or {})
+            return result.get("token_accounts") or []
+    except Exception as e:
+        logger.warning("Helius getTokenAccounts failed for %s: %s", mint, e)
+        return []
+
+
+async def get_recent_token_transactions(mint: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Fetch recent parsed transactions mentioning the mint."""
+    settings = get_settings()
+    if not settings.helius_api_key:
+        return []
+
+    url = f"https://api.helius.xyz/v0/addresses/{mint}/transactions"
+    params = {"api-key": settings.helius_api_key, "limit": min(limit, 100)}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else []
+    except Exception as e:
+        logger.warning("Helius token transactions failed for %s: %s", mint, e)
+        return []
 
 
 def _stub_metadata(mint: str) -> dict[str, Any]:
