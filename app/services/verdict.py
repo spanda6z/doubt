@@ -1,6 +1,7 @@
 """
-Verdict service — Week 1: exit engine only.
-Flow + death are neutral stubs so the response contract is complete.
+Verdict service — discovery intelligence.
+Exit math and observed transaction flow are computed from available sources;
+unknown fields remain explicitly unclassified rather than fabricated.
 """
 
 from __future__ import annotations
@@ -228,8 +229,8 @@ async def build_verdict(mint: str) -> VerdictResponse:
             age_basis="recent_transaction_window",
             median_lifespan_minutes=0,
             current_age_minutes=int(age_minutes),
-            survival_6h=0.5,
-            survival_24h=0.3,
+            survival_6h=0.0,
+            survival_24h=0.0,
             holder_velocity=0.0,
             volume_decay=1.0,
         ),
