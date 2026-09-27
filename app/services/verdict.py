@@ -11,6 +11,8 @@ from typing import Optional
 
 from app.config import get_settings
 from app.data import get_token_metadata, get_token_overview
+from app.data.helius import get_recent_token_transactions
+from app.scoring.flow_engine import compute_flow
 from app.models import (
     DeathData,
     ExitBuy,
@@ -35,14 +37,12 @@ def _verdict_from_score(score: int) -> str:
     return "AVOID"
 
 
-def _confidence(age_minutes: float, liquidity_usd: float) -> str:
-    if age_minutes < 30 or liquidity_usd < 10_000:
+def _confidence(flow_confidence: str, liquidity_usd: float) -> str:
+    if flow_confidence == "LOW" or liquidity_usd < 10_000:
         return "LOW"
-    if age_minutes < 24 * 60 and liquidity_usd > 10_000:
+    if flow_confidence == "MEDIUM" or liquidity_usd < 50_000:
         return "MEDIUM"
-    if age_minutes >= 24 * 60 and liquidity_usd > 50_000:
-        return "HIGH"
-    return "MEDIUM"
+    return "HIGH"
 
 
 def _build_tweet_text(v: VerdictResponse) -> str:
@@ -67,10 +67,33 @@ def _build_tweet_text(v: VerdictResponse) -> str:
 async def build_verdict(mint: str) -> VerdictResponse:
     settings = get_settings()
 
-    meta = await get_token_metadata(mint)
-    overview = await get_token_overview(mint)
+    import asyncio
+    meta, overview, transactions = await asyncio.gather(
+        get_token_metadata(mint),
+        get_token_overview(mint),
+        get_recent_token_transactions(mint, limit=100),
+    )
+    flow = compute_flow(transactions, mint, overview["price_usd"])
+    death_score = 50
+    if overview["liquidity_usd"] >= 50_000:
+        death_score += 20
+    elif overview["liquidity_usd"] < 5_000:
+        death_score -= 25
+    if overview["holder"] >= 1000:
+        death_score += 10
+    elif overview["holder"] < 100:
+        death_score -= 10
+    if flow.buy_pressure >= 60:
+        death_score += 10
+    elif flow.buy_pressure <= 40:
+        death_score -= 10
+    death_score = max(0, min(100, death_score))
 
-    age_minutes = 180.0  # placeholder until on-chain age is wired
+    timestamps = [int(t.get("timestamp") or 0) for t in transactions if t.get("timestamp")]
+    observed_window_minutes = 0
+    if len(timestamps) >= 2:
+        observed_window_minutes = max(0, (max(timestamps) - min(timestamps)) // 60)
+    age_minutes = max(60.0, float(observed_window_minutes))
 
     exit_inputs = ExitInputs(
         total_liquidity_usd=overview["liquidity_usd"],
