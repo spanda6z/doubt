@@ -1,12 +1,43 @@
 import type { VerdictResponse } from "./types";
 
-/** Prefer same-origin Next API; override with NEXT_PUBLIC_API_BASE for external FastAPI. */
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+/**
+ * Resolve API origin for both browser and server (Vercel SSR).
+ * Relative /api paths break on the server without a host.
+ */
+async function getApiBase(): Promise<string> {
+  const explicit = process.env.NEXT_PUBLIC_API_BASE;
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  // Browser: same origin
+  if (typeof window !== "undefined") {
+    return "";
+  }
+
+  // Server: prefer Vercel-provided host
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const host = h.get("x-forwarded-host") || h.get("host");
+    const proto = h.get("x-forwarded-proto") || "https";
+    if (host) return `${proto}://${host}`;
+  } catch {
+    /* headers() unavailable outside request context */
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  return "http://127.0.0.1:3000";
+}
 
 export async function fetchVerdict(mint: string): Promise<VerdictResponse> {
-  const url = `${API_BASE}/api/v1/verdict/${mint}`;
+  const base = await getApiBase();
+  const url = `${base}/api/v1/verdict/${mint}`;
+
   const res = await fetch(url, {
     next: { revalidate: 30 },
+    headers: { accept: "application/json" },
   });
 
   if (!res.ok) {
