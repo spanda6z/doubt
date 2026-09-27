@@ -150,22 +150,25 @@ export async function GET(
   let devIntelligence: Record<string, unknown> | null = null;
   let contractIntelligence: Record<string, unknown> | null = null;
   let riskIntelligence: Record<string, unknown> | null = null;
+  let marketHistory: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const [flowRes, holderRes, devRes, contractRes, riskRes] = await Promise.all([
+      const [flowRes, holderRes, devRes, contractRes, riskRes, historyRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
         fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
         fetch(api + "/v1/contract/" + address, { cache: "no-store" }),
         fetch(api + "/v1/risk/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/market/" + address + "/history?interval=5m&hours=24", { cache: "no-store" }),
       ]);
       if (flowRes.ok) intelligence = await flowRes.json();
       if (holderRes.ok) holderIntelligence = await holderRes.json();
       if (devRes.ok) devIntelligence = await devRes.json();
       if (contractRes.ok) contractIntelligence = await contractRes.json();
       if (riskRes.ok) riskIntelligence = await riskRes.json();
+      if (historyRes.ok) marketHistory = await historyRes.json();
     }
   } catch {
     intelligence = null;
@@ -173,6 +176,7 @@ export async function GET(
     devIntelligence = null;
     contractIntelligence = null;
     riskIntelligence = null;
+    marketHistory = null;
   }
 
   const holders = holderIntelligence
@@ -310,6 +314,7 @@ export async function GET(
     holders,
     dev,
     contract,
+    market_history: marketHistory || { available: false, candles: [], source: "unavailable" },
     risk: riskIntelligence
       ? {
           available: true,
