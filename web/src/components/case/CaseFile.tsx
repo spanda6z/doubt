@@ -78,6 +78,11 @@ type CaseData = {
   contract?: {
     available: boolean;
     reason?: string;
+    mint_authority?: string | null;
+    freeze_authority?: string | null;
+    token_program?: string | null;
+    authorities?: { address: string; scopes: string[] }[];
+    source?: string;
     pool_dex?: string | null;
   } | null;
   exit_math?: {
@@ -464,7 +469,41 @@ export function CaseFile({ data }: { data: CaseData }) {
           {data.contract?.pool_dex ? (
             <Row label="Pool" value={data.contract.pool_dex} />
           ) : null}
-          <Unavailable reason={data.contract?.reason} />
+          {data.contract?.available ? (
+            <>
+              <Row
+                label="Mint authority"
+                value={
+                  data.contract.mint_authority
+                    ? shortCa(data.contract.mint_authority)
+                    : "none observed"
+                }
+              />
+              <Row
+                label="Freeze authority"
+                value={
+                  data.contract.freeze_authority
+                    ? shortCa(data.contract.freeze_authority)
+                    : "none observed"
+                }
+              />
+              <Row
+                label="Token program"
+                value={
+                  data.contract.token_program
+                    ? shortCa(data.contract.token_program)
+                    : "—"
+                }
+              />
+              <p className="text-[10px] text-secondary mt-2">
+                Authority state is reported from Helius asset metadata. “None
+                observed” means no matching authority was returned; it is not a
+                guarantee about historical state.
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.contract?.reason} />
+          )}
         </Panel>
 
         <Panel title="Evidence">
