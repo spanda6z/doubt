@@ -97,12 +97,12 @@ async def build_verdict(mint: str) -> VerdictResponse:
 
     exit_inputs = ExitInputs(
         total_liquidity_usd=overview["liquidity_usd"],
-        top10_holder_pct=35.0,
-        dev_holder_pct=5.0,
+        top10_holder_pct=0.0,
+        dev_holder_pct=0.0,
         volume_24h_usd=overview["volume_24h_usd"],
         volume_1h_usd=overview["volume_1h_usd"],
-        mev_share_pct=8.0,
-        lp_locked_pct=0.0,
+        mev_share_pct=0.0,
+        lp_locked_pct=100.0,
         unique_holders=overview["holder"],
         age_minutes=age_minutes,
         tx_count_1h=max(overview.get("trade_1h", 10), 1),
@@ -110,14 +110,11 @@ async def build_verdict(mint: str) -> VerdictResponse:
 
     exit_out = compute_exit(exit_inputs)
 
-    flow_score = 55
-    death_score = 55
-
     combined = int(
         round(
-            exit_out.exit_score * 0.40
-            + flow_score * 0.35
-            + death_score * 0.25
+            exit_out.exit_score * 0.50
+            + flow.flow_score * 0.30
+            + death_score * 0.20
         )
     )
     combined = max(0, min(100, combined))
@@ -171,15 +168,30 @@ async def build_verdict(mint: str) -> VerdictResponse:
                 severity="yellow",
             )
         )
+    if flow.sells > flow.buys:
+        reasons.append(
+            Reason(
+                text=f"Observed sells exceed buys ({flow.sells}/{flow.buys})",
+                severity="yellow",
+            )
+        )
+    elif flow.buys > flow.sells and flow.buy_pressure >= 60:
+        reasons.append(
+            Reason(
+                text=f"Observed buy pressure {flow.buy_pressure:.0f}%",
+                severity="blue",
+            )
+        )
+
     if not reasons:
         reasons.append(
             Reason(
-                text="Limited data — exit math only (Week 1)",
+                text="Limited observable flow data",
                 severity="yellow",
             )
         )
 
-    confidence = _confidence(age_minutes, overview["liquidity_usd"])
+    confidence = _confidence(flow.confidence, overview["liquidity_usd"])
 
     resp = VerdictResponse(
         mint=mint,
@@ -191,21 +203,29 @@ async def build_verdict(mint: str) -> VerdictResponse:
         combined_score=combined,
         scores=Scores(
             exit=exit_out.exit_score,
-            flow=flow_score,
+            flow=flow.flow_score,
             death=death_score,
         ),
         exit_math=exit_math,
         reverse_flow=ReverseFlow(
-            ratio=1.0,
-            smart_in_usd=0,
-            insider_out_usd=0,
+            ratio=round(flow.sell_volume_usd / max(flow.buy_volume_usd, 1.0), 4),
+            smart_in_usd=0.0,
+            insider_out_usd=0.0,
             top_sellers=[],
             sniper_offload_count=0,
-            dev_wallet_status="unknown",
+            dev_wallet_status="unclassified",
+            buys=flow.buys,
+            sells=flow.sells,
+            unique_buyers=flow.unique_buyers,
+            unique_sellers=flow.unique_sellers,
+            buy_pressure=flow.buy_pressure,
+            confidence=flow.confidence,
+            source=flow.data_source if transactions else "unavailable",
         ),
         death_data=DeathData(
-            narrative_tag="other",
-            stage="UNKNOWN",
+            narrative_tag="observable_survivability",
+            stage="OBSERVED",
+            age_basis="recent_transaction_window",
             median_lifespan_minutes=0,
             current_age_minutes=int(age_minutes),
             survival_6h=0.5,
