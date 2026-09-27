@@ -4,7 +4,10 @@ import { computeExit } from "@/lib/exit-engine";
 const MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function stubOverview(mint: string) {
-  const seed = [...mint.slice(-6)].reduce((a, c) => a + c.charCodeAt(0), 0) % 100;
+  const tail = mint.slice(-6);
+  let seed = 0;
+  for (let i = 0; i < tail.length; i++) seed += tail.charCodeAt(i);
+  seed = seed % 100;
   const liq = 8000 + seed * 120;
   return {
     price_usd: 0.00012 + seed * 0.00001,
