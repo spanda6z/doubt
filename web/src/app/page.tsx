@@ -1,81 +1,92 @@
 "use client";
 
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
 import { isValidMint } from "@/lib/api";
+import type { RadarItem, RadarTab } from "@/lib/radar";
+import { TokenCard } from "@/components/TokenCard";
 
-const RECENT_KEY = "doubt_recent_mints";
-
-type Recent = { mint: string; symbol?: string; at: number };
-
-function loadRecent(): Recent[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    return (JSON.parse(raw) as Recent[]).slice(0, 5);
-  } catch {
-    return [];
-  }
-}
-
-function pushRecent(mint: string) {
-  const prev = loadRecent().filter((r) => r.mint !== mint);
-  const next = [{ mint, at: Date.now() }, ...prev].slice(0, 5);
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-}
+const TABS: { id: RadarTab; label: string; icon: string }[] = [
+  { id: "radar", label: "Radar", icon: "🌡️" },
+  { id: "fresh", label: "Fresh", icon: "⏱️" },
+  { id: "fading", label: "Fading", icon: "🔻" },
+];
 
 export default function HomePage() {
   const router = useRouter();
-  const [ca, setCa] = useState("");
+  const [tab, setTab] = useState<RadarTab>("radar");
+  const [items, setItems] = useState<RadarItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [recent, setRecent] = useState<Recent[]>([]);
+  const [ca, setCa] = useState("");
+  const [caError, setCaError] = useState("");
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
-  useEffect(() => {
-    setRecent(loadRecent());
+  const load = useCallback(async (t: RadarTab) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/v1/radar?tab=${t}&limit=40`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to load radar");
+      const data = await res.json();
+      setItems(data.items || []);
+      setUpdatedAt(data.updated_at || null);
+    } catch {
+      setError("Could not load discovery feed. Try again.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  function go(mint: string) {
-    pushRecent(mint);
-    router.push(`/t/${mint}`);
-  }
+  useEffect(() => {
+    load(tab);
+    const id = setInterval(() => load(tab), 60_000);
+    return () => clearInterval(id);
+  }, [tab, load]);
 
-  function onSubmit(e: FormEvent) {
+  function onCheck(e: FormEvent) {
     e.preventDefault();
     const mint = ca.trim();
     if (!isValidMint(mint)) {
-      setError("That doesn't look like a Solana mint address.");
+      setCaError("That doesn't look like a Solana mint address.");
       return;
     }
-    setError("");
-    go(mint);
+    setCaError("");
+    router.push(`/t/${mint}`);
   }
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center px-5 py-12">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-bold tracking-tight">Doubt</h1>
-          <p className="text-secondary text-lg leading-snug">
-            The exit math before the entry.
-          </p>
-        </div>
+    <main className="min-h-dvh max-w-lg mx-auto flex flex-col">
+      <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-border">
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-baseline justify-between mb-3">
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">Doubt</h1>
+              <p className="text-xs text-secondary">
+                Exit math before the entry
+              </p>
+            </div>
+            {updatedAt && (
+              <button
+                type="button"
+                onClick={() => load(tab)}
+                className="text-xs text-secondary hover:text-primary"
+              >
+                Refresh
+              </button>
+            )}
+          </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="ca"
-              className="block text-xs font-semibold uppercase tracking-wider text-secondary mb-2"
-            >
-              Paste a Solana token CA
-            </label>
+          <form onSubmit={onCheck} className="flex gap-2">
             <input
-              id="ca"
               type="text"
               value={ca}
               onChange={(e) => {
                 setCa(e.target.value);
-                setError("");
+                setCaError("");
               }}
               onPaste={(e) => {
                 const text = e.clipboardData.getData("text").trim();
@@ -83,56 +94,99 @@ export default function HomePage() {
                 if (match) {
                   e.preventDefault();
                   setCa(match[0]);
-                  setError("");
+                  setCaError("");
                 }
               }}
-              placeholder="Paste mint address…"
-              className="w-full bg-card border border-border rounded-xl px-4 py-3.5 text-primary placeholder:text-secondary/50 focus:outline-none focus:ring-2 focus:ring-safe/40 font-mono text-sm"
+              placeholder="Paste CA to check…"
+              className="flex-1 bg-card border border-border rounded-xl px-3 py-2.5 text-sm font-mono placeholder:text-secondary/50 focus:outline-none focus:ring-2 focus:ring-safe/40"
               autoComplete="off"
-              autoCorrect="off"
               spellCheck={false}
-              autoFocus
             />
-            {error && (
-              <p className="mt-2 text-sm text-avoid">{error}</p>
-            )}
-          </div>
+            <button
+              type="submit"
+              className="shrink-0 bg-safe hover:bg-safe/90 text-white text-sm font-semibold rounded-xl px-4 py-2.5"
+            >
+              Check
+            </button>
+          </form>
+          {caError && (
+            <p className="mt-1.5 text-xs text-avoid">{caError}</p>
+          )}
+        </div>
 
-          <button
-            type="submit"
-            className="w-full bg-safe hover:bg-safe/90 active:scale-[0.99] text-white font-semibold rounded-xl py-3.5 transition-all"
-          >
-            Check exit math
-          </button>
-        </form>
+        <div className="flex px-2">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                tab === t.id
+                  ? "border-safe text-primary"
+                  : "border-transparent text-secondary hover:text-primary"
+              }`}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      </header>
 
-        {recent.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-secondary">
-              Recent
-            </p>
-            <ul className="space-y-1.5">
-              {recent.map((r) => (
-                <li key={r.mint}>
-                  <button
-                    type="button"
-                    onClick={() => go(r.mint)}
-                    className="w-full text-left px-3 py-2.5 rounded-xl bg-card border border-border hover:border-secondary/30 transition-colors font-mono text-sm text-secondary hover:text-primary truncate"
-                  >
-                    {r.mint.slice(0, 6)}…{r.mint.slice(-6)}
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <div className="flex-1 px-4 py-4 space-y-3 pb-10">
+        {tab === "fading" && !loading && (
+          <p className="text-xs text-secondary px-1 pb-1">
+            Tokens with bad exit math or sharp dumps — what it costs if you&apos;re
+            wrong.
+          </p>
+        )}
+        {tab === "fresh" && !loading && (
+          <p className="text-xs text-secondary px-1 pb-1">
+            Newest pairs first. Low data = treat as risky.
+          </p>
+        )}
+
+        {loading && (
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-36 rounded-2xl bg-card border border-border animate-pulse"
+              />
+            ))}
           </div>
         )}
 
-        <p className="text-center text-xs text-secondary leading-relaxed">
-          Discovery only. No wallet. No swaps. No custody.
-          <br />
-          Not financial advice.
-        </p>
+        {!loading && error && (
+          <div className="text-center py-16 space-y-3">
+            <p className="text-secondary text-sm">{error}</p>
+            <button
+              type="button"
+              onClick={() => load(tab)}
+              className="text-safe text-sm hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && items.length === 0 && (
+          <div className="text-center py-16 space-y-2">
+            <p className="text-secondary text-sm">
+              No tokens in this feed right now.
+            </p>
+            <p className="text-xs text-secondary">
+              Paste a CA above — we don&apos;t guess.
+            </p>
+          </div>
+        )}
+
+        {!loading &&
+          items.map((item) => <TokenCard key={item.mint} item={item} />)}
       </div>
+
+      <footer className="px-4 py-4 border-t border-border text-center text-[11px] text-secondary">
+        Discovery only. No wallet. No swaps. Not financial advice.
+      </footer>
     </main>
   );
 }
