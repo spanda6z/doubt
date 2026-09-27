@@ -2,13 +2,35 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Doubt — The exit math before the entry",
+  title: {
+    default: "Doubt — The exit math before the entry",
+    template: "%s · Doubt",
+  },
   description:
-    "Honest exit math, reverse flow analysis, and narrative death prediction for Solana meme tokens. Discovery only. Not financial advice.",
+    "Solana meme-token discovery with honest exit math. Radar, Fresh, and Fading feeds. Not financial advice. No wallet. No swaps.",
+  applicationName: "Doubt",
+  keywords: [
+    "Solana",
+    "meme token",
+    "exit liquidity",
+    "token discovery",
+    "rug check",
+    "Doubt",
+  ],
   openGraph: {
     title: "Doubt",
     description: "The exit math before the entry.",
     type: "website",
+    siteName: "Doubt",
+  },
+  twitter: {
+    card: "summary",
+    title: "Doubt",
+    description: "The exit math before the entry.",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 

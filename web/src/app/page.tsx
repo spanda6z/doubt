@@ -212,8 +212,42 @@ export default function HomePage() {
           items.map((item) => <TokenCard key={item.mint} item={item} />)}
       </div>
 
-      <footer className="px-4 py-4 border-t border-border text-center text-[11px] text-secondary">
-        Discovery only · No wallet · No swaps · Not financial advice
+      <footer className="px-4 py-5 border-t border-border text-center text-[11px] text-secondary space-y-2">
+        <p>Discovery only · No wallet · No swaps · Not financial advice</p>
+        <p className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+          <a
+            href="https://github.com/spanda6z/doubt/blob/main/docs/legal/disclaimer.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary underline-offset-2 hover:underline"
+          >
+            Disclaimer
+          </a>
+          <a
+            href="https://github.com/spanda6z/doubt/blob/main/docs/legal/terms.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary underline-offset-2 hover:underline"
+          >
+            Terms
+          </a>
+          <a
+            href="https://github.com/spanda6z/doubt/blob/main/docs/legal/privacy.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary underline-offset-2 hover:underline"
+          >
+            Privacy
+          </a>
+          <a
+            href="https://github.com/spanda6z/doubt/tree/main/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary underline-offset-2 hover:underline"
+          >
+            Docs
+          </a>
+        </p>
       </footer>
     </main>
   );
