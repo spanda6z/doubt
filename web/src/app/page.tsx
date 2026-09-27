@@ -6,6 +6,7 @@ import Link from "next/link";
 import { isValidMint } from "@/lib/api";
 import type { RadarItem, RadarTab } from "@/lib/radar";
 import { fmtAge, fmtPct, fmtUsd } from "@/lib/format";
+import { TerminalNav } from "@/components/TerminalNav";
 
 const TABS: { id: RadarTab; label: string }[] = [
   { id: "radar", label: "Radar" },
@@ -61,7 +62,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-dvh max-w-lg mx-auto flex flex-col">
+    <main className="min-h-dvh max-w-lg mx-auto flex flex-col pb-16">
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-border">
         <div className="px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-baseline justify-between">
@@ -251,6 +252,7 @@ export default function HomePage() {
       <footer className="px-4 py-3 border-t border-border text-center text-[10px] text-secondary">
         Discovery only · No wallet · No swaps · Not financial advice
       </footer>
+      <TerminalNav />
     </main>
   );
 }
