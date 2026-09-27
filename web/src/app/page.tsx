@@ -17,16 +17,18 @@ export default function HomePage() {
   const [tab, setTab] = useState<RadarTab>("radar");
   const [items, setItems] = useState<RadarItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [ca, setCa] = useState("");
   const [caError, setCaError] = useState("");
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
-  const load = useCallback(async (t: RadarTab) => {
-    setLoading(true);
+  const load = useCallback(async (t: RadarTab, soft = false) => {
+    if (soft) setRefreshing(true);
+    else setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/v1/radar?tab=${t}&limit=40`, {
+      const res = await fetch(`/api/v1/radar?tab=${t}&limit=50`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to load radar");
@@ -35,15 +37,16 @@ export default function HomePage() {
       setUpdatedAt(data.updated_at || null);
     } catch {
       setError("Could not load discovery feed. Try again.");
-      setItems([]);
+      if (!soft) setItems([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     load(tab);
-    const id = setInterval(() => load(tab), 60_000);
+    const id = setInterval(() => load(tab, true), 45_000);
     return () => clearInterval(id);
   }, [tab, load]);
 
@@ -58,6 +61,11 @@ export default function HomePage() {
     router.push(`/t/${mint}`);
   }
 
+  const avoidCount = items.filter((i) => i.verdict === "AVOID").length;
+  const riskyCount = items.filter(
+    (i) => i.verdict === "RISKY" || i.verdict === "AVOID"
+  ).length;
+
   return (
     <main className="min-h-dvh max-w-lg mx-auto flex flex-col">
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-border">
@@ -69,15 +77,14 @@ export default function HomePage() {
                 Exit math before the entry
               </p>
             </div>
-            {updatedAt && (
-              <button
-                type="button"
-                onClick={() => load(tab)}
-                className="text-xs text-secondary hover:text-primary"
-              >
-                Refresh
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => load(tab, true)}
+              disabled={refreshing || loading}
+              className="text-xs text-secondary hover:text-primary disabled:opacity-40"
+            >
+              {refreshing ? "Updating…" : "Refresh"}
+            </button>
           </div>
 
           <form onSubmit={onCheck} className="flex gap-2">
@@ -97,7 +104,7 @@ export default function HomePage() {
                   setCaError("");
                 }
               }}
-              placeholder="Paste CA to check…"
+              placeholder="Paste any CA…"
               className="flex-1 bg-card border border-border rounded-xl px-3 py-2.5 text-sm font-mono placeholder:text-secondary/50 focus:outline-none focus:ring-2 focus:ring-safe/40"
               autoComplete="off"
               spellCheck={false}
@@ -133,15 +140,36 @@ export default function HomePage() {
       </header>
 
       <div className="flex-1 px-4 py-4 space-y-3 pb-10">
+        {!loading && items.length > 0 && (
+          <div className="flex items-center justify-between text-[11px] text-secondary px-0.5">
+            <span>
+              {items.length} tokens
+              {tab === "radar" && riskyCount > 0 && (
+                <> · {riskyCount} elevated risk</>
+              )}
+              {tab === "fading" && avoidCount > 0 && (
+                <> · {avoidCount} avoid</>
+              )}
+            </span>
+            {updatedAt && (
+              <span>
+                {new Date(updatedAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+          </div>
+        )}
+
         {tab === "fading" && !loading && (
-          <p className="text-xs text-secondary px-1 pb-1">
-            Tokens with bad exit math or sharp dumps — what it costs if you&apos;re
-            wrong.
+          <p className="text-xs text-secondary px-0.5">
+            Bad exit math or sharp dumps — what it costs if you&apos;re wrong.
           </p>
         )}
         {tab === "fresh" && !loading && (
-          <p className="text-xs text-secondary px-1 pb-1">
-            Newest pairs first. Low data = treat as risky.
+          <p className="text-xs text-secondary px-0.5">
+            Newest pairs first. Thin books = high exit cost.
           </p>
         )}
 
@@ -150,7 +178,7 @@ export default function HomePage() {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-36 rounded-2xl bg-card border border-border animate-pulse"
+                className="h-40 rounded-2xl bg-card border border-border animate-pulse"
               />
             ))}
           </div>
@@ -175,7 +203,7 @@ export default function HomePage() {
               No tokens in this feed right now.
             </p>
             <p className="text-xs text-secondary">
-              Paste a CA above — we don&apos;t guess.
+              Paste a CA above — we don&apos;t invent coins.
             </p>
           </div>
         )}
@@ -185,7 +213,7 @@ export default function HomePage() {
       </div>
 
       <footer className="px-4 py-4 border-t border-border text-center text-[11px] text-secondary">
-        Discovery only. No wallet. No swaps. Not financial advice.
+        Discovery only · No wallet · No swaps · Not financial advice
       </footer>
     </main>
   );
