@@ -209,6 +209,45 @@ async def get_dev_trace(mint: str) -> dict[str, Any]:
     }
 
 
+
+@app.get("/v1/contract/{mint}")
+async def get_contract(mint: str) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+
+    metadata = await get_token_metadata(mint)
+    authorities = metadata.get("authorities") or []
+    mint_authority = None
+    freeze_authority = None
+    authority_rows = []
+
+    for item in authorities:
+        if not isinstance(item, dict) or not item.get("address"):
+            continue
+        address = str(item["address"])
+        scopes = [str(x) for x in (item.get("scopes") or [])]
+        authority_rows.append({"address": address, "scopes": scopes})
+        joined = " ".join(scopes).lower()
+        if "mint" in joined:
+            mint_authority = address
+        if "freeze" in joined:
+            freeze_authority = address
+
+    token_info = (metadata.get("raw") or {}).get("token_info") or {}
+    token_program = token_info.get("token_program")
+
+    return {
+        "mint": mint,
+        "mint_authority": mint_authority,
+        "freeze_authority": freeze_authority,
+        "token_program": token_program,
+        "authorities": authority_rows,
+        "available": bool(authorities or token_program),
+        "source": "helius_getAsset" if metadata.get("raw") else "unavailable",
+    }
+
+
 @app.post("/webhooks/helius", response_model=WebhookAck)
 async def helius_webhook(request: Request) -> WebhookAck:
     """
