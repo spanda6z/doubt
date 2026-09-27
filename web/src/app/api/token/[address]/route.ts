@@ -148,23 +148,27 @@ export async function GET(
   let intelligence: Record<string, unknown> | null = null;
   let holderIntelligence: Record<string, unknown> | null = null;
   let devIntelligence: Record<string, unknown> | null = null;
+  let contractIntelligence: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const [flowRes, holderRes, devRes] = await Promise.all([
+      const [flowRes, holderRes, devRes, contractRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
         fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/contract/" + address, { cache: "no-store" }),
       ]);
       if (flowRes.ok) intelligence = await flowRes.json();
       if (holderRes.ok) holderIntelligence = await holderRes.json();
       if (devRes.ok) devIntelligence = await devRes.json();
+      if (contractRes.ok) contractIntelligence = await contractRes.json();
     }
   } catch {
     intelligence = null;
     holderIntelligence = null;
     devIntelligence = null;
+    contractIntelligence = null;
   }
 
   const holders = holderIntelligence
@@ -230,15 +234,29 @@ export async function GET(
         disclaimer: "Candidate creator evidence only.",
       };
 
-  const contract = {
-    available: false,
-    reason:
-      "Authority checks require on-chain read (Helius). Not configured or unavailable.",
-    mint_authority: null as string | null,
-    freeze_authority: null as string | null,
-    token_program: null as string | null,
-    pool_dex: pair.dexId || null,
-  };
+  const contract = contractIntelligence
+    ? {
+        available: Boolean(contractIntelligence.available),
+        reason: null,
+        mint_authority: (contractIntelligence.mint_authority as string) ?? null,
+        freeze_authority: (contractIntelligence.freeze_authority as string) ?? null,
+        token_program: (contractIntelligence.token_program as string) ?? null,
+        authorities: Array.isArray(contractIntelligence.authorities)
+          ? contractIntelligence.authorities
+          : [],
+        source: (contractIntelligence.source as string) ?? "unavailable",
+        pool_dex: pair.dexId || null,
+      }
+    : {
+        available: false,
+        reason: "Authority checks require Helius asset data. Not configured or unavailable.",
+        mint_authority: null as string | null,
+        freeze_authority: null as string | null,
+        token_program: null as string | null,
+        authorities: [] as unknown[],
+        source: "unavailable",
+        pool_dex: pair.dexId || null,
+      };
 
   const body = {
     address,
