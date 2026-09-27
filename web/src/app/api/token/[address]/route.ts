@@ -146,26 +146,53 @@ export async function GET(
   }
 
   let intelligence: Record<string, unknown> | null = null;
+  let holderIntelligence: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const r = await fetch(`${api}/v1/flow/${address}`, { cache: "no-store" });
-      if (r.ok) intelligence = await r.json();
+      const [flowRes, holderRes] = await Promise.all([
+        fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
+      ]);
+      if (flowRes.ok) intelligence = await flowRes.json();
+      if (holderRes.ok) holderIntelligence = await holderRes.json();
     }
   } catch {
     intelligence = null;
+    holderIntelligence = null;
   }
 
-  const holders = {
-    available: false,
-    reason:
-      "Holder data requires on-chain indexer (Helius). Not configured or unavailable.",
-    total: null as number | null,
-    top10_pct: null as number | null,
-    top25_pct: null as number | null,
-    largest: [] as { rank: number; pct: number | null }[],
-  };
+  const holders = holderIntelligence
+    ? {
+        available: true,
+        reason: null,
+        total: (holderIntelligence.holder_count as number) ?? null,
+        top10_pct: (holderIntelligence.top10_pct as number) ?? null,
+        top20_pct: (holderIntelligence.top20_pct as number) ?? null,
+        top25_pct: (holderIntelligence.top25_pct as number) ?? null,
+        confidence: (holderIntelligence.confidence as string) ?? "LOW",
+        source: (holderIntelligence.source as string) ?? "unavailable",
+        largest: Array.isArray(holderIntelligence.largest)
+          ? holderIntelligence.largest.map((row: any) => ({
+              rank: Number(row.rank),
+              owner: String(row.owner),
+              pct: typeof row.pct === "number" ? row.pct : null,
+            }))
+          : [],
+      }
+    : {
+        available: false,
+        reason:
+          "Holder data requires Helius token-account indexing. Not configured or unavailable.",
+        total: null as number | null,
+        top10_pct: null as number | null,
+        top20_pct: null as number | null,
+        top25_pct: null as number | null,
+        confidence: "LOW",
+        source: "unavailable",
+        largest: [] as { rank: number; owner: string; pct: number | null }[],
+      };
 
   const dev = {
     available: false,
