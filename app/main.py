@@ -5,6 +5,7 @@ DISCOVERY ONLY. No execution. No wallet. No custody.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -19,7 +20,8 @@ from app.config import get_settings
 from app.data import get_token_overview
 from app.scoring.flow_engine import compute_flow
 from app.scoring.holder_engine import compute_holders
-from app.data.helius import get_recent_token_transactions, get_token_accounts
+from app.scoring.dev_engine import compute_dev
+from app.data.helius import get_recent_token_transactions, get_token_accounts, get_token_metadata
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
 from app.rate_limit import verdict_limiter
@@ -129,6 +131,81 @@ async def get_flow(mint: str) -> dict[str, Any]:
         "unique_sellers": flow.unique_sellers,
         "confidence": flow.confidence,
         "source": flow.data_source if transactions else "unavailable",
+    }
+
+
+
+@app.get("/v1/holders/{mint}")
+async def get_holders(mint: str) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+
+    accounts = await get_token_accounts(mint, limit=1000)
+    holders = compute_holders(accounts)
+
+    try:
+        from sqlalchemy import text
+        from app.db import get_session
+
+        async for session in get_session():
+            await session.execute(
+                text("""
+                    INSERT INTO holder_snapshots
+                      (token_address, holder_count, top10_pct, top20_pct, source)
+                    VALUES
+                      (:token_address, :holder_count, :top10_pct, :top20_pct, :source)
+                """),
+                {
+                    "token_address": mint,
+                    "holder_count": holders.holder_count,
+                    "top10_pct": holders.top10_pct,
+                    "top20_pct": holders.top20_pct,
+                    "source": holders.source,
+                },
+            )
+            await session.commit()
+            break
+    except Exception as exc:
+        logger.warning("Holder snapshot persistence skipped for %s: %s", mint, exc)
+
+    return {
+        "mint": mint,
+        "holder_count": holders.holder_count,
+        "top10_pct": holders.top10_pct,
+        "top20_pct": holders.top20_pct,
+        "top25_pct": holders.top25_pct,
+        "largest": [
+            {"rank": r.rank, "owner": r.owner, "amount": r.amount, "pct": r.pct}
+            for r in holders.largest
+        ],
+        "observed_supply": holders.observed_supply,
+        "confidence": holders.confidence,
+        "source": holders.source if accounts else "unavailable",
+    }
+
+
+@app.get("/v1/dev/{mint}")
+async def get_dev_trace(mint: str) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+
+    metadata, transactions = await asyncio.gather(
+        get_token_metadata(mint),
+        get_recent_token_transactions(mint, limit=100),
+    )
+    dev = compute_dev(metadata, transactions, mint)
+
+    return {
+        "mint": mint,
+        "creator_candidate": dev.creator_candidate,
+        "authority_addresses": dev.authority_addresses,
+        "observed_related_mints": dev.observed_related_mints,
+        "earliest_observed_signature": dev.earliest_observed_signature,
+        "confidence": dev.confidence,
+        "source": dev.source if (metadata.get("raw") or transactions) else "unavailable",
+        "disclaimer": "Candidate creator/authority evidence only; related mints are observed activity, not confirmed launches.",
     }
 
 
