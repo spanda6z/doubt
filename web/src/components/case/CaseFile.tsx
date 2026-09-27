@@ -85,6 +85,7 @@ type CaseData = {
     source?: string;
     pool_dex?: string | null;
   } | null;
+  market_history?: { available: boolean; candles: { timestamp: number; open: number; high: number; low: number; close: number; volume: number }[]; source: string };
   risk?: {
     available: boolean;
     severity: string;
@@ -526,6 +527,30 @@ export function CaseFile({ data }: { data: CaseData }) {
           )}
         </Panel>
 
+        <Panel title="Price / Volume">
+          {data.market_history?.available && data.market_history.candles.length > 1 ? (
+            <div className="space-y-3">
+              <div className="h-28 flex items-end gap-[2px] overflow-hidden">
+                {data.market_history.candles.slice(-72).map((candle, i, arr) => {
+                  const lows = arr.map((x) => x.low).filter((x) => x > 0);
+                  const highs = arr.map((x) => x.high).filter((x) => x > 0);
+                  const lo = Math.min(...lows);
+                  const hi = Math.max(...highs);
+                  const range = Math.max(hi - lo, Number.EPSILON);
+                  const h = Math.max(8, ((candle.close - lo) / range) * 100);
+                  return (
+                    <div key={candle.timestamp || i} className="flex-1 min-w-[2px] h-full flex items-end">
+                      <div className="w-full bg-foreground/70 rounded-[1px]" style={{ height: `${h}%`, opacity: candle.close >= candle.open ? 0.9 : 0.35 }} title={new Date(candle.timestamp * 1000).toLocaleTimeString()} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between text-[10px] text-secondary"><span>5m candles · 24h</span><span>{data.market_history.source}</span></div>
+            </div>
+          ) : (
+            <Unavailable reason="Historical candles require Birdeye OHLCV data." />
+          )}
+        </Panel>
         <Panel title="Risk / Death">
           {data.risk?.available ? (
             <>
