@@ -1,96 +1,119 @@
-# Doubt — The exit math before the entry.
+# Doubt
 
-Solana meme token **discovery** platform.  
-No wallet. No swaps. No custody. Pure data + analysis.
+**The exit math before the entry.**
 
-> Every screen answers: *What will this cost me if I'm wrong?*
+Doubt is a Solana meme-token **discovery** platform. We help traders answer one question before they buy:
 
----
+> *What will this cost me if I'm wrong?*
 
-## Stack
-
-| Layer | Tech |
-|-------|------|
-| API | FastAPI (Python) — scoring + data |
-| Web | Next.js 14 App Router + Tailwind |
-| Bot | python-telegram-bot (optional) |
-| Cache | Redis (optional) |
-| DB | Postgres / Supabase (optional Week 1) |
+We do not execute trades. We do not connect wallets. We do not take custody. We sell **honest exit math**, reverse-flow context, and narrative risk — not speed and hype.
 
 ---
 
-## Quick start
+## Product
 
-### 1. API
+| Surface | Purpose |
+|--------|---------|
+| **Radar** | Live discovery feed ranked by exit quality |
+| **Fresh** | Newest pairs first |
+| **Fading** | Tokens with bad exit math or sharp dumps |
+| **Verdict** | Full exit-math breakdown for any mint (`/t/[CA]`) |
 
-```bash
-cd solana-doubt
-pip install -r requirements.txt
-cp .env.example .env   # optional: add HELIUS_API_KEY, BIRDEYE_API_KEY
+**Category:** Information utility  
+**Network:** Solana  
+**Legal posture:** Not financial advice · Not a broker · Not a trading interface
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+### Design principles
 
-### 2. Web UI
+1. Every screen answers: *What will this cost me if I'm wrong?*
+2. If a screen only shows upside, delete it.
+3. No green “gem” language. Neutral risk colors only.
+4. Discovery only — never execution.
+
+---
+
+## Quick start (local)
+
+### Web (primary product)
 
 ```bash
 cd web
-cp .env.local.example .env.local
 npm install
 npm run dev
 # → http://localhost:3000
 ```
 
-Paste a CA on the home page → `/t/<mint>` verdict screen.
-
-### 3. Telegram bot (optional)
+Optional env (live metadata instead of stubs):
 
 ```bash
-export DOUBT_API_BASE=http://127.0.0.1:8000
-export TELEGRAM_BOT_TOKEN=...
-python -m bot.telegram_bot
+# web/.env.local
+HELIUS_API_KEY=
+BIRDEYE_API_KEY=
+```
+
+### API (Python / optional)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+### Deploy (Vercel)
+
+1. Import `spanda6z/doubt` on Vercel  
+2. **Root Directory:** `web`  
+3. Framework: Next.js  
+4. Deploy  
+
+See [docs/ops/deployment.md](docs/ops/deployment.md).
+
+---
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Product overview](docs/product/overview.md) | What we build and why |
+| [User guide](docs/product/user-guide.md) | How to use Radar and Verdicts |
+| [Scoring model](docs/product/scoring.md) | Exit, flow, death scores |
+| [API reference](docs/api/reference.md) | REST endpoints |
+| [Architecture](docs/ops/architecture.md) | System design |
+| [Deployment](docs/ops/deployment.md) | Vercel & ops |
+| [Security](docs/security/security.md) | Threat model & data handling |
+| [Privacy](docs/legal/privacy.md) | Privacy policy |
+| [Terms](docs/legal/terms.md) | Terms of use |
+| [Disclaimer](docs/legal/disclaimer.md) | Not financial advice |
+
+---
+
+## Repository layout
+
+```
+doubt/
+├── web/                 # Next.js app (discovery UI + serverless API)
+│   ├── src/app/         # App Router pages & API routes
+│   ├── src/components/  # UI
+│   └── src/lib/         # Exit engine, radar, types
+├── app/                 # FastAPI backend (optional / scale path)
+├── bot/                 # Telegram bot (optional)
+├── docs/                # Official documentation
+└── tests/               # Scoring tests
 ```
 
 ---
 
-## Screens (web)
+## Status
 
-- **/** — Paste CA
-- **/t/[mint]** — Verdict screen (exit math, reasons, gray trade link)
-
-Matches Section 7 mobile-first design:
-- Near-black background, no green on verdict
-- Big verdict word + rug probability
-- "If you buy $500 now" exit math card
-- Expandable reasons with Solscan links
-- Gray "I understand, trade anyway" → Jupiter (external)
+**Public alpha.** Radar and exit-math verdicts are live. Flow scoring, death curves, entity pages, and Telegram are roadmap items — see [docs/product/roadmap.md](docs/product/roadmap.md).
 
 ---
 
-## Project layout
+## Contact
 
-```
-solana-doubt/
-├── app/                 # FastAPI backend
-│   ├── main.py
-│   ├── scoring/exit_engine.py
-│   ├── data/            # Helius, Birdeye
-│   └── services/verdict.py
-├── web/                 # Next.js frontend
-│   └── src/
-│       ├── app/         # pages
-│       ├── components/  # VerdictView, ExitMathCard, …
-│       └── lib/         # api client, types
-├── bot/telegram_bot.py
-└── tests/
-```
+- Product questions: open a GitHub Discussion or Issue  
+- Security: see [docs/security/security.md](docs/security/security.md)
 
 ---
 
-## Design rules (non-negotiable)
-
-1. Every number has a delta or a link  
-2. Buy button is always last and always gray  
-3. No green on the verdict screen  
-4. Empty state = "we don't guess"  
-5. Discovery only — never execution
+*Doubt — exit math before the entry.*
