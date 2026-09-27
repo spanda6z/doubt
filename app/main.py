@@ -18,6 +18,7 @@ from app.cache import check_redis, get_cached_verdict, set_cached_verdict
 from app.config import get_settings
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
+from app.rate_limit import verdict_limiter
 from app.services.verdict import build_verdict
 
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +39,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Doubt API",
     description="Exit math before the entry. Discovery only.",
-    version="0.1.0",
+    version="0.1.1",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
@@ -66,12 +67,19 @@ async def health_deps() -> dict[str, Any]:
 
 
 @app.get("/v1/verdict/{mint}", response_model=VerdictResponse)
-async def get_verdict(mint: str) -> VerdictResponse:
+async def get_verdict(mint: str, request: Request) -> VerdictResponse:
     mint = mint.strip()
     if not MINT_RE.match(mint):
         raise HTTPException(
             status_code=400,
             detail="That doesn't look like a Solana mint address.",
+        )
+
+    client = request.client.host if request.client else "unknown"
+    if not verdict_limiter.allow(client):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Try again in a minute.",
         )
 
     settings = get_settings()
@@ -85,7 +93,9 @@ async def get_verdict(mint: str) -> VerdictResponse:
         verdict = await build_verdict(mint)
     except Exception as e:
         logger.exception("Verdict build failed for %s", mint)
-        raise HTTPException(status_code=502, detail="Upstream data unavailable") from e
+        raise HTTPException(
+            status_code=502, detail="Upstream data unavailable"
+        ) from e
 
     payload = verdict.model_dump(mode="json")
     await set_cached_verdict(mint, payload, ttl=settings.verdict_ttl_seconds)
@@ -100,7 +110,6 @@ async def helius_webhook(request: Request) -> WebhookAck:
     """
     try:
         body = await request.json()
-        # Log only; process later
         count = len(body) if isinstance(body, list) else 1
         logger.info("Helius webhook received (%s items)", count)
     except Exception:
