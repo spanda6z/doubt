@@ -109,5 +109,7 @@ def _stub_metadata(mint: str) -> dict[str, Any]:
         "image_url": None,
         "decimals": 6,
         "supply": None,
+        "authorities": [],
+        "ownership": {},
         "raw": {},
     }
