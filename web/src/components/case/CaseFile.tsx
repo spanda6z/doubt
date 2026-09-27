@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fmtAge, fmtPct, fmtUsd, shortCa } from "@/lib/format";
 import { Panel, Row, Unavailable } from "./Panel";
@@ -133,6 +133,7 @@ const SEV: Record<string, string> = {
 export function CaseFile({ data }: { data: CaseData }) {
   const [size, setSize] = useState(100);
   const [custom, setCustom] = useState("");
+  const [watched, setWatched] = useState(false);
 
   const exit = useMemo(() => {
     if (!data.exit_math?.sizes) return null;
@@ -140,9 +141,30 @@ export function CaseFile({ data }: { data: CaseData }) {
     return fromLadder || data.exit_math.default_100;
   }, [data.exit_math, size]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("doubt:watchlist:v1");
+      const items = raw ? JSON.parse(raw) : [];
+      setWatched(items.some((item: { address: string }) => item.address === data.address));
+    } catch {}
+  }, [data.address]);
+
   function onCustom() {
     const n = Number(custom);
     if (n > 0) setSize(n);
+  }
+
+  function toggleWatch() {
+    try {
+      const raw = localStorage.getItem("doubt:watchlist:v1");
+      const items = raw ? JSON.parse(raw) : [];
+      const exists = items.some((item: { address: string }) => item.address === data.address);
+      const next = exists
+        ? items.filter((item: { address: string }) => item.address !== data.address)
+        : [{ address: data.address, symbol: data.symbol || "TOKEN", image_url: data.image_url || null, saved_at: new Date().toISOString(), alerts: true }, ...items].slice(0, 100);
+      localStorage.setItem("doubt:watchlist:v1", JSON.stringify(next));
+      setWatched(!exists);
+    } catch {}
   }
 
   if (!data.available) {
@@ -191,13 +213,14 @@ export function CaseFile({ data }: { data: CaseData }) {
               Solana · {fmtAge(data.age_minutes)} · {shortCa(data.address)}
             </p>
           </div>
-          <button
-            type="button"
-            className="text-[11px] text-secondary hover:text-primary shrink-0"
-            onClick={() => navigator.clipboard.writeText(data.address)}
-          >
-            Copy CA
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" className={watched ? "text-[11px] px-2.5 py-1 rounded-md border border-safe text-primary bg-safe/10" : "text-[11px] px-2.5 py-1 rounded-md border border-border text-secondary"} onClick={toggleWatch}>
+              {watched ? "Watching" : "Watch"}
+            </button>
+            <button type="button" className="text-[11px] text-secondary hover:text-primary" onClick={() => navigator.clipboard.writeText(data.address)}>
+              Copy CA
+            </button>
+          </div>
         </div>
       </header>
 
