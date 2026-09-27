@@ -102,6 +102,32 @@ async def get_verdict(mint: str, request: Request) -> VerdictResponse:
     return verdict
 
 
+@app.get("/v1/flow/{mint}")
+async def get_flow(mint: str) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+
+    overview, transactions = await __import__("asyncio").gather(
+        get_token_overview(mint),
+        get_recent_token_transactions(mint, limit=100),
+    )
+    flow = compute_flow(transactions, mint, overview["price_usd"])
+    return {
+        "mint": mint,
+        "buys": flow.buys,
+        "sells": flow.sells,
+        "buy_volume_usd": flow.buy_volume_usd,
+        "sell_volume_usd": flow.sell_volume_usd,
+        "net_flow_usd": flow.net_flow_usd,
+        "buy_pressure": flow.buy_pressure,
+        "unique_buyers": flow.unique_buyers,
+        "unique_sellers": flow.unique_sellers,
+        "confidence": flow.confidence,
+        "source": flow.data_source if transactions else "unavailable",
+    }
+
+
 @app.post("/webhooks/helius", response_model=WebhookAck)
 async def helius_webhook(request: Request) -> WebhookAck:
     """
