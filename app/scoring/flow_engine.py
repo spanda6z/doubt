@@ -30,6 +30,22 @@ def _token_transfers(tx: dict[str, Any], mint: str) -> list[dict[str, Any]]:
     return [x for x in (tx.get("tokenTransfers") or []) if x.get("mint") == mint]
 
 
+def _amount(transfer: dict[str, Any]) -> float:
+    value = transfer.get("tokenAmount")
+    if value is not None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    value = transfer.get("uiTokenAmount")
+    if isinstance(value, dict):
+        value = value.get("uiAmount") or value.get("uiAmountString")
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _classify(tx: dict[str, Any], mint: str) -> str | None:
     desc = (tx.get("description") or "").lower()
     if "swap" in desc:
@@ -44,8 +60,8 @@ def _classify(tx: dict[str, Any], mint: str) -> str | None:
 
     # Fallback: a swap that increases token balance for a wallet is treated as buy.
     # We only use this for aggregate flow; no wallet is labeled smart.
-    incoming = sum(float(x.get("tokenAmount") or x.get("uiTokenAmount") or 0) for x in transfers if x.get("toUserAccount"))
-    outgoing = sum(float(x.get("tokenAmount") or x.get("uiTokenAmount") or 0) for x in transfers if x.get("fromUserAccount"))
+    incoming = sum(_amount(x) for x in transfers if x.get("toUserAccount"))
+    outgoing = sum(_amount(x) for x in transfers if x.get("fromUserAccount"))
     if incoming > outgoing:
         return "buy"
     if outgoing > incoming:
@@ -65,7 +81,7 @@ def compute_flow(transactions: list[dict[str, Any]], mint: str, price_usd: float
         if not kind or not transfers:
             continue
 
-        token_amount = sum(float(x.get("tokenAmount") or 0) for x in transfers)
+        token_amount = sum(_amount(x) for x in transfers)
         usd = max(0.0, token_amount * max(price_usd, 0.0))
 
         if kind == "buy":
