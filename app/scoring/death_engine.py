@@ -67,11 +67,7 @@ def compute_risk(
     if pressure_now is not None:
         pressure_now = float(pressure_now)
 
-    _, liq_prev = _latest_previous(holder_history, "liquidity_usd")
-    # Liquidity is not stored in holder snapshots, so use optional enriched
-    # history when present; otherwise this remains unavailable.
-    if liq_prev is None:
-        liq_prev = None
+    _, liq_prev = _latest_previous(flow_history, "liquidity_usd")
 
     _, holder_prev = _latest_previous(holder_history, "holder_count")
     _, top10_prev = _latest_previous(holder_history, "top10_pct")
