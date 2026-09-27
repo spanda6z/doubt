@@ -22,6 +22,7 @@ from app.scoring.flow_engine import compute_flow
 from app.scoring.holder_engine import compute_holders
 from app.scoring.dev_engine import compute_dev
 from app.scoring.death_engine import compute_risk
+from app.data.birdeye import get_token_history
 from app.data.helius import get_recent_token_transactions, get_token_accounts, get_token_metadata
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
@@ -174,6 +175,27 @@ async def get_flow(mint: str) -> dict[str, Any]:
         "liquidity_usd": overview.get("liquidity_usd"),
         "volume_1h_usd": overview.get("volume_1h_usd"),
         "volume_24h_usd": overview.get("volume_24h_usd"),
+    }
+
+
+@app.get("/v1/market/{mint}/history")
+async def get_market_history(mint: str, interval: str = "1m", hours: int = 24) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+    allowed = {"1m", "5m", "15m", "30m", "1H"}
+    if interval not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported interval.")
+    hours = max(1, min(hours, 168))
+    now = int(__import__("time").time())
+    candles = await get_token_history(mint, interval, now - hours * 3600, now)
+    return {
+        "mint": mint,
+        "interval": interval,
+        "hours": hours,
+        "candles": candles,
+        "available": bool(candles),
+        "source": "birdeye_ohlcv" if candles else "unavailable",
     }
 
 
