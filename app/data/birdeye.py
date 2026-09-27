@@ -15,6 +15,41 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+async def get_token_history(mint: str, interval: str = "1m", time_from: int | None = None, time_to: int | None = None) -> list[dict[str, Any]]:
+    """Fetch historical OHLCV candles from Birdeye when configured."""
+    settings = get_settings()
+    if not settings.birdeye_api_key:
+        return []
+    url = "https://public-api.birdeye.so/defi/ohlcv"
+    headers = {"X-API-KEY": settings.birdeye_api_key, "x-chain": "solana", "accept": "application/json"}
+    params: dict[str, Any] = {"address": mint, "type": interval}
+    if time_from is not None:
+        params["time_from"] = time_from
+    if time_to is not None:
+        params["time_to"] = time_to
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        items = (data.get("data") or {}).get("items") or []
+        return [
+            {
+                "timestamp": int(x.get("unixTime") or x.get("timestamp") or 0),
+                "open": float(x.get("o") or 0),
+                "high": float(x.get("h") or 0),
+                "low": float(x.get("l") or 0),
+                "close": float(x.get("c") or 0),
+                "volume": float(x.get("v") or 0),
+            }
+            for x in items
+            if x.get("unixTime") is not None or x.get("timestamp") is not None
+        ]
+    except Exception as e:
+        logger.warning("Birdeye OHLCV failed for %s: %s", mint, e)
+        return []
+
+
 async def get_token_overview(mint: str) -> dict[str, Any]:
     """
     Fetch token overview from Birdeye.
