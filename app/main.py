@@ -21,6 +21,7 @@ from app.data import get_token_overview
 from app.scoring.flow_engine import compute_flow
 from app.scoring.holder_engine import compute_holders
 from app.scoring.dev_engine import compute_dev
+from app.scoring.death_engine import compute_risk
 from app.data.helius import get_recent_token_transactions, get_token_accounts, get_token_metadata
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
@@ -119,6 +120,45 @@ async def get_flow(mint: str) -> dict[str, Any]:
         get_recent_token_transactions(mint, limit=100),
     )
     flow = compute_flow(transactions, mint, overview["price_usd"])
+
+    try:
+        from sqlalchemy import text
+        from app.db import get_session
+
+        async for session in get_session():
+            await session.execute(
+                text("""
+                    INSERT INTO flow_snapshots
+                      (token_address, buys, sells, buy_volume_usd, sell_volume_usd,
+                       unique_buyers, unique_sellers, net_flow_usd, buy_pressure,
+                       confidence, source, liquidity_usd, volume_1h_usd, volume_24h_usd)
+                    VALUES
+                      (:token_address, :buys, :sells, :buy_volume_usd, :sell_volume_usd,
+                       :unique_buyers, :unique_sellers, :net_flow_usd, :buy_pressure,
+                       :confidence, :source, :liquidity_usd, :volume_1h_usd, :volume_24h_usd)
+                """),
+                {
+                    "token_address": mint,
+                    "buys": flow.buys,
+                    "sells": flow.sells,
+                    "buy_volume_usd": flow.buy_volume_usd,
+                    "sell_volume_usd": flow.sell_volume_usd,
+                    "unique_buyers": flow.unique_buyers,
+                    "unique_sellers": flow.unique_sellers,
+                    "net_flow_usd": flow.net_flow_usd,
+                    "buy_pressure": flow.buy_pressure,
+                    "confidence": flow.confidence,
+                    "source": flow.data_source if transactions else "unavailable",
+                    "liquidity_usd": overview.get("liquidity_usd"),
+                    "volume_1h_usd": overview.get("volume_1h_usd"),
+                    "volume_24h_usd": overview.get("volume_24h_usd"),
+                },
+            )
+            await session.commit()
+            break
+    except Exception as exc:
+        logger.warning("Flow snapshot persistence skipped for %s: %s", mint, exc)
+
     return {
         "mint": mint,
         "buys": flow.buys,
@@ -131,6 +171,91 @@ async def get_flow(mint: str) -> dict[str, Any]:
         "unique_sellers": flow.unique_sellers,
         "confidence": flow.confidence,
         "source": flow.data_source if transactions else "unavailable",
+        "liquidity_usd": overview.get("liquidity_usd"),
+        "volume_1h_usd": overview.get("volume_1h_usd"),
+        "volume_24h_usd": overview.get("volume_24h_usd"),
+    }
+
+
+@app.get("/v1/flow/{mint}/history")
+async def get_flow_history(mint: str, limit: int = 12) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+    limit = max(1, min(limit, 50))
+    try:
+        from sqlalchemy import text
+        from app.db import get_session
+
+        rows = []
+        async for session in get_session():
+            result = await session.execute(
+                text("""
+                    SELECT ts, buys, sells, buy_volume_usd, sell_volume_usd,
+                           net_flow_usd, buy_pressure, unique_buyers,
+                           unique_sellers, liquidity_usd, volume_1h_usd,
+                           volume_24h_usd, confidence, source
+                    FROM flow_snapshots
+                    WHERE token_address = :token_address
+                    ORDER BY ts DESC
+                    LIMIT :limit
+                """),
+                {"token_address": mint, "limit": limit},
+            )
+            rows = [dict(row._mapping) for row in result.fetchall()]
+            break
+        return {"mint": mint, "snapshots": rows, "available": bool(rows)}
+    except Exception as exc:
+        logger.warning("Flow history unavailable for %s: %s", mint, exc)
+        return {"mint": mint, "snapshots": [], "available": False}
+
+
+@app.get("/v1/risk/{mint}")
+async def get_risk(mint: str, limit: int = 12) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+    limit = max(2, min(limit, 50))
+
+    overview, flow_history, holder_history = await asyncio.gather(
+        get_token_overview(mint),
+        get_flow_history(mint, limit),
+        get_holder_history(mint, limit),
+    )
+
+    transactions = await get_recent_token_transactions(mint, limit=100)
+    flow = compute_flow(transactions, mint, overview["price_usd"])
+    holder_accounts = await get_token_accounts(mint, limit=1000)
+    holders = compute_holders(holder_accounts)
+
+    result = compute_risk(
+        {
+            "liquidity_usd": overview.get("liquidity_usd"),
+            "volume_1h_usd": overview.get("volume_1h_usd"),
+            "holder_count": holders.holder_count,
+            "top10_pct": holders.top10_pct,
+            "buy_pressure": flow.buy_pressure,
+        },
+        holder_history.get("snapshots", []),
+        flow_history.get("snapshots", []),
+    )
+    return {
+        "mint": mint,
+        "severity": result.severity,
+        "deterioration_score": result.deterioration_score,
+        "confidence": result.confidence,
+        "liquidity_change_pct": result.liquidity_change_pct,
+        "volume_change_pct": result.volume_change_pct,
+        "holder_change_pct": result.holder_change_pct,
+        "concentration_change_pct": result.concentration_change_pct,
+        "sell_pressure_change": result.sell_pressure_change,
+        "exit_impact_change_pct": result.exit_impact_change_pct,
+        "evidence": result.evidence,
+        "source": result.source,
+        "history": {
+            "flow": flow_history.get("snapshots", []),
+            "holders": holder_history.get("snapshots", []),
+        },
     }
 
 
