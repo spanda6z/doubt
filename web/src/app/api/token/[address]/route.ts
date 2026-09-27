@@ -147,20 +147,24 @@ export async function GET(
 
   let intelligence: Record<string, unknown> | null = null;
   let holderIntelligence: Record<string, unknown> | null = null;
+  let devIntelligence: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const [flowRes, holderRes] = await Promise.all([
+      const [flowRes, holderRes, devRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
       ]);
       if (flowRes.ok) intelligence = await flowRes.json();
       if (holderRes.ok) holderIntelligence = await holderRes.json();
+      if (devRes.ok) devIntelligence = await devRes.json();
     }
   } catch {
     intelligence = null;
     holderIntelligence = null;
+    devIntelligence = null;
   }
 
   const holders = holderIntelligence
@@ -194,13 +198,37 @@ export async function GET(
         largest: [] as { rank: number; owner: string; pct: number | null }[],
       };
 
-  const dev = {
-    available: false,
-    reason:
-      "Deployer history requires on-chain indexer (Helius). Not configured or unavailable.",
-    creator: null as string | null,
-    previous_tokens: null as number | null,
-  };
+  const dev = devIntelligence
+    ? {
+        available: true,
+        reason: null,
+        creator: (devIntelligence.creator_candidate as string) ?? null,
+        authority_addresses: Array.isArray(devIntelligence.authority_addresses)
+          ? devIntelligence.authority_addresses.map(String)
+          : [],
+        related_mints: Array.isArray(devIntelligence.observed_related_mints)
+          ? devIntelligence.observed_related_mints.map(String)
+          : [],
+        earliest_observed_signature:
+          (devIntelligence.earliest_observed_signature as string) ?? null,
+        confidence: (devIntelligence.confidence as string) ?? "LOW",
+        source: (devIntelligence.source as string) ?? "unavailable",
+        disclaimer:
+          (devIntelligence.disclaimer as string) ??
+          "Candidate creator evidence only.",
+      }
+    : {
+        available: false,
+        reason:
+          "Creator trace requires Helius asset and transaction data. Not configured or unavailable.",
+        creator: null as string | null,
+        authority_addresses: [] as string[],
+        related_mints: [] as string[],
+        earliest_observed_signature: null as string | null,
+        confidence: "LOW",
+        source: "unavailable",
+        disclaimer: "Candidate creator evidence only.",
+      };
 
   const contract = {
     available: false,
