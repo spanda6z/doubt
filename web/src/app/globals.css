@@ -67,3 +67,11 @@ body {
 .animate-stagger > *:nth-child(5) {
   animation-delay: 0.25s;
 }
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+input:focus {
+  outline: none;
+}
