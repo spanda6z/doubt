@@ -236,6 +236,8 @@ async def get_contract(mint: str) -> dict[str, Any]:
 
     token_info = (metadata.get("raw") or {}).get("token_info") or {}
     token_program = token_info.get("token_program")
+    mint_authority = mint_authority or token_info.get("mint_authority")
+    freeze_authority = freeze_authority or token_info.get("freeze_authority")
 
     return {
         "mint": mint,
