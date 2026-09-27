@@ -185,6 +185,38 @@ async def get_holders(mint: str) -> dict[str, Any]:
     }
 
 
+
+@app.get("/v1/holders/{mint}/history")
+async def get_holder_history(mint: str, limit: int = 12) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+    limit = max(1, min(limit, 50))
+
+    try:
+        from sqlalchemy import text
+        from app.db import get_session
+
+        rows = []
+        async for session in get_session():
+            result = await session.execute(
+                text("""
+                    SELECT ts, holder_count, top10_pct, top20_pct, source
+                    FROM holder_snapshots
+                    WHERE token_address = :token_address
+                    ORDER BY ts DESC
+                    LIMIT :limit
+                """),
+                {"token_address": mint, "limit": limit},
+            )
+            rows = [dict(row._mapping) for row in result.fetchall()]
+            break
+        return {"mint": mint, "snapshots": rows, "available": bool(rows)}
+    except Exception as exc:
+        logger.warning("Holder history unavailable for %s: %s", mint, exc)
+        return {"mint": mint, "snapshots": [], "available": False}
+
+
 @app.get("/v1/dev/{mint}")
 async def get_dev_trace(mint: str) -> dict[str, Any]:
     mint = mint.strip()
