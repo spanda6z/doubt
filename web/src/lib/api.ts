@@ -1,17 +1,19 @@
 import type { VerdictResponse } from "./types";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+/** Prefer same-origin Next API; override with NEXT_PUBLIC_API_BASE for external FastAPI. */
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export async function fetchVerdict(mint: string): Promise<VerdictResponse> {
-  const res = await fetch(`${API_BASE}/v1/verdict/${mint}`, {
+  const url = `${API_BASE}/api/v1/verdict/${mint}`;
+  const res = await fetch(url, {
     next: { revalidate: 30 },
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      body.detail || `Failed to fetch verdict (${res.status})`
+      (body as { detail?: string }).detail ||
+        `Failed to fetch verdict (${res.status})`
     );
   }
 
