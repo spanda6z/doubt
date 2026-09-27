@@ -145,6 +145,18 @@ export async function GET(
     });
   }
 
+  let intelligence: Record<string, unknown> | null = null;
+  try {
+    const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
+    if (baseUrl) {
+      const api = baseUrl.replace(/\\/$/, "");
+      const r = await fetch(`${api}/v1/flow/${address}`, { cache: "no-store" });
+      if (r.ok) intelligence = await r.json();
+    }
+  } catch {
+    intelligence = null;
+  }
+
   const holders = {
     available: false,
     reason:
@@ -207,7 +219,8 @@ export async function GET(
       })),
     },
     flow: {
-      available: buys1h != null || sells1h != null,
+      available: Boolean(intelligence) || buys1h != null || sells1h != null,
+      source: intelligence ? "helius_observed" : "market_feed",
       buys_5m: buys5m,
       sells_5m: sells5m,
       buys_1h: buys1h,
@@ -215,6 +228,7 @@ export async function GET(
       buy_sell_ratio_1h: buySellRatio,
       volume_5m_usd: vol5m,
       volume_1h_usd: vol1h,
+      observed: intelligence,
     },
     holders,
     dev,
