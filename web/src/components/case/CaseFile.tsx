@@ -64,7 +64,17 @@ type CaseData = {
     source?: string;
     largest?: { rank: number; owner: string; pct: number | null }[];
   } | null;
-  dev?: { available: boolean; reason?: string } | null;
+  dev?: {
+    available: boolean;
+    reason?: string | null;
+    creator?: string | null;
+    authority_addresses?: string[];
+    related_mints?: string[];
+    earliest_observed_signature?: string | null;
+    confidence?: string;
+    source?: string;
+    disclaimer?: string;
+  } | null;
   contract?: {
     available: boolean;
     reason?: string;
@@ -414,7 +424,40 @@ export function CaseFile({ data }: { data: CaseData }) {
         </Panel>
 
         <Panel title="Dev trace">
-          <Unavailable reason={data.dev?.reason} />
+          {data.dev?.available ? (
+            <>
+              <Row
+                label="Creator candidate"
+                value={data.dev.creator ? shortCa(data.dev.creator) : "—"}
+              />
+              <Row label="Confidence" value={data.dev.confidence || "LOW"} />
+              <Row
+                label="Authority addresses"
+                value={data.dev.authority_addresses?.length ?? 0}
+              />
+              <Row
+                label="Related mints observed"
+                value={data.dev.related_mints?.length ?? 0}
+              />
+              {data.dev.related_mints && data.dev.related_mints.length > 0 ? (
+                <>
+                  <div className="border-t border-border my-2" />
+                  <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">
+                    Related activity
+                  </p>
+                  {data.dev.related_mints.slice(0, 5).map((mint) => (
+                    <Row key={mint} label={shortCa(mint)} value="observed" />
+                  ))}
+                </>
+              ) : null}
+              <p className="text-[10px] text-secondary mt-2 leading-relaxed">
+                {data.dev.disclaimer ||
+                  "Candidate creator evidence only. Observed related mints are not confirmed launches."}
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.dev?.reason || undefined} />
+          )}
         </Panel>
 
         <Panel title="Contract">
