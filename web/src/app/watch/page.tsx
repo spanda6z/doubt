@@ -1,28 +1,62 @@
 "use client";
-
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TerminalNav } from "@/components/TerminalNav";
+import { shortCa } from "@/lib/format";
 
-const demo = [
-  { symbol: "MOONCAT", doubt: 68, flow: "81↑", state: "Liquidity $24K" },
-  { symbol: "DOGAI", doubt: 54, flow: "72↑", state: "Volume expanding" },
-  { symbol: "PEPE2", doubt: 42, flow: "64→", state: "Stable" },
-];
+type WatchItem = { address: string; symbol: string; image_url?: string | null; saved_at: string; alerts: boolean };
+type TokenState = { address: string; symbol?: string | null; market?: { liquidity_usd: number | null; volume_1h_usd: number | null } | null; flow?: { observed?: { buy_pressure?: number | null } | null } | null; risk?: { severity?: string } | null };
+const KEY = "doubt:watchlist:v1";
 
 export default function WatchPage() {
+  const [items, setItems] = useState<WatchItem[]>([]);
+  const [states, setStates] = useState<Record<string, TokenState>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { try { const raw = localStorage.getItem(KEY); if (raw) setItems(JSON.parse(raw)); } catch {} }, []);
+  useEffect(() => {
+    localStorage.setItem(KEY, JSON.stringify(items));
+    const load = async () => {
+      setLoading(true);
+      const results = await Promise.all(items.map(async (item) => {
+        try { const r = await fetch("/api/token/" + item.address, { cache: "no-store" }); return r.ok ? await r.json() as TokenState : null; } catch { return null; }
+      }));
+      const next: Record<string, TokenState> = {};
+      results.forEach((state) => { if (state) next[state.address] = state; });
+      setStates(next); setLoading(false);
+    };
+    if (items.length) load(); else setLoading(false);
+  }, [items]);
+
+  const alertCount = useMemo(() => items.filter((item) => {
+    const severity = states[item.address]?.risk?.severity;
+    return item.alerts && ["WATCH", "DETERIORATING", "SEVERE"].includes(severity || "");
+  }).length, [items, states]);
+
+  function remove(address: string) { setItems((current) => current.filter((x) => x.address !== address)); }
+
   return (
     <main className="min-h-dvh max-w-lg mx-auto px-3 pb-24">
-      <header className="pt-5 pb-4 flex items-end justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-secondary">Research</p><h1 className="text-xl font-bold">Watch</h1></div><span className="text-[10px] text-secondary">Local workspace</span></header>
+      <header className="pt-5 pb-4 flex items-end justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-secondary">Research</p><h1 className="text-xl font-bold">Watch</h1></div><Link href="/alerts" className="text-[10px] text-secondary hover:text-primary">Alerts →</Link></header>
       <section className="grid grid-cols-3 gap-2 mb-4">
-        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">Saved</p><p className="text-lg font-semibold">0</p></div>
-        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">Alerts</p><p className="text-lg font-semibold">0</p></div>
-        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">History</p><p className="text-lg font-semibold">—</p></div>
+        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">Saved</p><p className="text-lg font-semibold">{items.length}</p></div>
+        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">Active alerts</p><p className="text-lg font-semibold">{alertCount}</p></div>
+        <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] text-secondary uppercase">Storage</p><p className="text-lg font-semibold">Local</p></div>
       </section>
       <section className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-3 py-3 border-b border-border"><p className="text-sm font-semibold">Watchlist</p><p className="text-[10px] text-secondary mt-0.5">Pin cases as you research them.</p></div>
-        {demo.map((x) => <div key={x.symbol} className="px-3 py-3 border-b border-border last:border-0 flex items-center justify-between"><div><p className="text-sm font-semibold">{"$"}{x.symbol}</p><p className="text-[10px] text-secondary mt-0.5">{x.state}</p></div><div className="text-right"><p className="text-xs font-semibold">Doubt {x.doubt}</p><p className="text-[10px] text-safe">Flow {x.flow}</p></div></div>)}
+        <div className="px-3 py-3 border-b border-border"><p className="text-sm font-semibold">Watchlist</p><p className="text-[10px] text-secondary mt-0.5">Saved cases persist in this browser. No account or wallet required.</p></div>
+        {items.length === 0 ? <div className="px-4 py-10 text-center"><p className="text-sm font-medium">Nothing saved yet.</p><p className="text-[11px] text-secondary mt-1">Open a token case and tap Watch to keep it here.</p><Link href="/discover" className="inline-block mt-4 text-xs text-safe">Open Discover →</Link></div> : items.map((item) => {
+          const s = states[item.address]; const severity = s?.risk?.severity || "—"; const alert = item.alerts && ["WATCH", "DETERIORATING", "SEVERE"].includes(severity);
+          return <div key={item.address} className="px-3 py-3 border-b border-border last:border-0">
+            <div className="flex items-center gap-3">
+              {item.image_url ? <img src={item.image_url} alt="" className="w-8 h-8 rounded-full object-cover bg-border" /> : <div className="w-8 h-8 rounded-full bg-border" />}
+              <div className="min-w-0 flex-1"><Link href={"/token/" + item.address} className="text-sm font-semibold hover:underline">{"$" + (item.symbol || "TOKEN")}</Link><p className="text-[10px] font-mono text-secondary">{shortCa(item.address)} · {loading && !s ? "updating…" : severity}</p></div>
+              {alert ? <span className="text-[9px] uppercase tracking-wide text-risky">Alert</span> : null}<button onClick={() => remove(item.address)} className="text-[10px] text-secondary hover:text-primary">Remove</button>
+            </div>
+            {s ? <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]"><div><span className="text-secondary">Liquidity</span><p className="font-medium">{s.market?.liquidity_usd != null ? "$" + Math.round(s.market.liquidity_usd).toLocaleString() : "—"}</p></div><div><span className="text-secondary">1h volume</span><p className="font-medium">{s.market?.volume_1h_usd != null ? "$" + Math.round(s.market.volume_1h_usd).toLocaleString() : "—"}</p></div><div><span className="text-secondary">Buy pressure</span><p className="font-medium">{s.flow?.observed?.buy_pressure != null ? s.flow.observed.buy_pressure.toFixed(1) + "%" : "—"}</p></div></div> : null}
+          </div>;
+        })}
       </section>
-      <div className="mt-3 rounded-xl border border-border bg-card p-4"><p className="text-xs font-semibold">Workspace</p><p className="mt-1 text-[11px] leading-5 text-secondary">This surface is ready for persistent saved cases and event alerts. It currently stays local to the product shell.</p><Link href="/discover" className="inline-block mt-3 text-xs text-safe">Open Discover →</Link></div>
       <TerminalNav />
     </main>
   );
