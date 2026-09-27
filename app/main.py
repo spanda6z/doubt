@@ -22,7 +22,7 @@ from app.scoring.flow_engine import compute_flow
 from app.scoring.holder_engine import compute_holders
 from app.scoring.dev_engine import compute_dev
 from app.scoring.death_engine import compute_risk
-from app.data.birdeye import get_token_history, get_token_overview
+from app.data.birdeye import get_token_history
 from app.data.helius import get_recent_token_transactions, get_token_accounts, get_token_metadata
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
