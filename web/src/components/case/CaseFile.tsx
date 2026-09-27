@@ -53,7 +53,17 @@ type CaseData = {
     sells_1h: number | null;
     buy_sell_ratio_1h: number | null;
   } | null;
-  holders?: { available: boolean; reason?: string } | null;
+  holders?: {
+    available: boolean;
+    reason?: string | null;
+    total?: number | null;
+    top10_pct?: number | null;
+    top20_pct?: number | null;
+    top25_pct?: number | null;
+    confidence?: string;
+    source?: string;
+    largest?: { rank: number; owner: string; pct: number | null }[];
+  } | null;
   dev?: { available: boolean; reason?: string } | null;
   contract?: {
     available: boolean;
@@ -346,7 +356,61 @@ export function CaseFile({ data }: { data: CaseData }) {
         </Panel>
 
         <Panel title="Holders">
-          <Unavailable reason={data.holders?.reason} />
+          {data.holders?.available ? (
+            <>
+              <Row label="Observed holders" value={data.holders.total ?? "—"} />
+              <Row
+                label="Top 10 concentration"
+                value={
+                  data.holders.top10_pct != null
+                    ? `${data.holders.top10_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row
+                label="Top 20 concentration"
+                value={
+                  data.holders.top20_pct != null
+                    ? `${data.holders.top20_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row
+                label="Top 25 concentration"
+                value={
+                  data.holders.top25_pct != null
+                    ? `${data.holders.top25_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row label="Confidence" value={data.holders.confidence || "LOW"} />
+              {data.holders.largest && data.holders.largest.length > 0 ? (
+                <>
+                  <div className="border-t border-border my-2" />
+                  <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">
+                    Largest observed holders
+                  </p>
+                  {data.holders.largest.slice(0, 5).map((holder) => (
+                    <Row
+                      key={holder.rank}
+                      label={`#${holder.rank} ${shortCa(holder.owner)}`}
+                      value={
+                        holder.pct != null
+                          ? `${holder.pct.toFixed(2)}%`
+                          : "—"
+                      }
+                    />
+                  ))}
+                </>
+              ) : null}
+              <p className="text-[10px] text-secondary mt-2">
+                Concentration is computed from observed Helius token accounts. It
+                does not classify wallets or identify intent.
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.holders?.reason || undefined} />
+          )}
         </Panel>
 
         <Panel title="Dev trace">
