@@ -53,6 +53,8 @@ async def get_token_metadata(mint: str) -> dict[str, Any]:
         "image_url": links.get("image") or content.get("json_uri"),
         "decimals": token_info.get("decimals", 6),
         "supply": token_info.get("supply"),
+        "authorities": result.get("authorities") or [],
+        "ownership": result.get("ownership") or {},
         "raw": result,
     }
 
