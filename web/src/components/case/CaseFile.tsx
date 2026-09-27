@@ -35,6 +35,18 @@ type CaseData = {
   } | null;
   flow?: {
     available: boolean;
+    source?: string;
+    observed?: {
+      buys?: number;
+      sells?: number;
+      buy_volume_usd?: number;
+      sell_volume_usd?: number;
+      net_flow_usd?: number;
+      buy_pressure?: number;
+      unique_buyers?: number;
+      unique_sellers?: number;
+      confidence?: string;
+    } | null;
     buys_5m: number | null;
     sells_5m: number | null;
     buys_1h: number | null;
@@ -302,8 +314,21 @@ export function CaseFile({ data }: { data: CaseData }) {
         <Panel title="Flow">
           {data.flow?.available ? (
             <>
-              <Row label="Buys 1h (txns)" value={data.flow.buys_1h ?? "—"} />
-              <Row label="Sells 1h (txns)" value={data.flow.sells_1h ?? "—"} />
+              {data.flow.observed ? (
+                <>
+                  <Row label="Observed buys" value={data.flow.observed.buys ?? "—"} />
+                  <Row label="Observed sells" value={data.flow.observed.sells ?? "—"} />
+                  <Row label="Buy pressure" value={data.flow.observed.buy_pressure != null ? `${data.flow.observed.buy_pressure.toFixed(1)}%` : "—"} />
+                  <Row label="Net flow" value={data.flow.observed.net_flow_usd != null ? fmtUsd(data.flow.observed.net_flow_usd) : "—"} />
+                  <Row label="Unique buyers" value={data.flow.observed.unique_buyers ?? "—"} />
+                  <Row label="Unique sellers" value={data.flow.observed.unique_sellers ?? "—"} />
+                  <Row label="Confidence" value={data.flow.observed.confidence || "—"} />
+                  <p className="text-[10px] text-secondary mt-2">Observed from parsed on-chain transactions. No wallet is classified as smart money here.</p>
+                </>
+              ) : null}
+              <div className="border-t border-border my-2" />
+              <Row label="Buys 1h (market)" value={data.flow.buys_1h ?? "—"} />
+              <Row label="Sells 1h (market)" value={data.flow.sells_1h ?? "—"} />
               <Row
                 label="Buy / sell ratio"
                 value={
