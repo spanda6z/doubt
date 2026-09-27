@@ -33,7 +33,7 @@ function verdictFromScore(score: number): RadarItem["verdict"] {
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate: 45 },
+      next: { revalidate: 40 },
       headers: { accept: "application/json" },
     });
     if (!res.ok) return null;
@@ -97,6 +97,8 @@ function pairToItem(pair: DexPair, mint: string): RadarItem | null {
   if (typeof ch1 === "number" && ch1 < -20) {
     combined = Math.min(combined, 45);
   }
+  if (liq < 3000) combined = Math.min(combined, 35);
+  if (liq < 1000) combined = Math.min(combined, 20);
 
   const cascadeDelta =
     Math.round(((exit.cascade_exit_500 - 500) / 500) * 10000) / 100;
@@ -124,28 +126,71 @@ function pairToItem(pair: DexPair, mint: string): RadarItem | null {
   };
 }
 
-export async function fetchRadarItems(): Promise<RadarItem[]> {
-  type Boost = { chainId?: string; tokenAddress?: string };
-  const [boosts, profiles] = await Promise.all([
-    fetchJson<Boost[]>("https://api.dexscreener.com/token-boosts/top/v1"),
-    fetchJson<Boost[]>("https://api.dexscreener.com/token-profiles/latest/v1"),
-  ]);
-
+function collectMints(
+  ...lists: Array<Array<{ chainId?: string; tokenAddress?: string }> | null>
+): string[] {
   const mints = new Set<string>();
-  for (const list of [boosts || [], profiles || []]) {
-    for (const t of list) {
+  for (const list of lists) {
+    for (const t of list || []) {
       if (t.chainId === "solana" && t.tokenAddress) {
         mints.add(t.tokenAddress);
       }
     }
   }
+  return [...mints];
+}
 
-  const mintList = [...mints].slice(0, 40);
-  if (!mintList.length) return [];
+async function fetchSearchMints(): Promise<string[]> {
+  const queries = ["solana", "bonk", "meme"];
+  const found = new Set<string>();
+  await Promise.all(
+    queries.map(async (q) => {
+      const data = await fetchJson<{ pairs?: DexPair[] }>(
+        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`
+      );
+      for (const p of data?.pairs || []) {
+        if (p.chainId !== "solana") continue;
+        const addr = p.baseToken?.address;
+        if (!addr) continue;
+        if (addr === "So11111111111111111111111111111111111111112") continue;
+        const liq = p.liquidity?.usd || 0;
+        const age = p.pairCreatedAt
+          ? (Date.now() - p.pairCreatedAt) / 60000
+          : 99999;
+        if (liq >= 800 && age < 60 * 24 * 14) found.add(addr);
+      }
+    })
+  );
+  return [...found];
+}
+
+export async function fetchRadarItems(): Promise<RadarItem[]> {
+  type Boost = { chainId?: string; tokenAddress?: string };
+
+  const [boostsTop, boostsLatest, profiles, searchMints] = await Promise.all([
+    fetchJson<Boost[]>("https://api.dexscreener.com/token-boosts/top/v1"),
+    fetchJson<Boost[]>("https://api.dexscreener.com/token-boosts/latest/v1"),
+    fetchJson<Boost[]>("https://api.dexscreener.com/token-profiles/latest/v1"),
+    fetchSearchMints(),
+  ]);
+
+  const mintList = [
+    ...collectMints(boostsTop, boostsLatest, profiles),
+    ...searchMints,
+  ];
+  const ordered: string[] = [];
+  const seenMint = new Set<string>();
+  for (const m of mintList) {
+    if (seenMint.has(m)) continue;
+    seenMint.add(m);
+    ordered.push(m);
+  }
+  const capped = ordered.slice(0, 60);
+  if (!capped.length) return [];
 
   const chunks: string[][] = [];
-  for (let i = 0; i < mintList.length; i += 20) {
-    chunks.push(mintList.slice(i, i + 20));
+  for (let i = 0; i < capped.length; i += 20) {
+    chunks.push(capped.slice(i, i + 20));
   }
 
   const items: RadarItem[] = [];
@@ -163,7 +208,7 @@ export async function fetchRadarItems(): Promise<RadarItem[]> {
         if (!best) continue;
         const item = pairToItem(best, mint);
         if (!item) continue;
-        if (item.liquidity_usd < 500 && item.age_minutes > 30) continue;
+        if (item.liquidity_usd < 400 && item.age_minutes > 45) continue;
         seen.add(mint);
         items.push(item);
       }
@@ -182,11 +227,15 @@ export function sortRadar(items: RadarItem[], tab: RadarTab): RadarItem[] {
     return copy
       .filter(
         (i) =>
-          i.exit_delta_500 <= -20 ||
-          (i.price_change_h1 !== null && i.price_change_h1 < -15) ||
+          i.exit_delta_500 <= -15 ||
+          (i.price_change_h1 !== null && i.price_change_h1 < -12) ||
           i.combined_score < 50
       )
-      .sort((a, b) => a.combined_score - b.combined_score);
+      .sort(
+        (a, b) =>
+          a.combined_score - b.combined_score ||
+          a.exit_delta_500 - b.exit_delta_500
+      );
   }
   return copy.sort(
     (a, b) =>
