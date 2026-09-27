@@ -85,6 +85,26 @@ type CaseData = {
     source?: string;
     pool_dex?: string | null;
   } | null;
+  risk?: {
+    available: boolean;
+    severity: string;
+    deterioration_score: number | null;
+    confidence: string;
+    liquidity_change_pct: number | null;
+    volume_change_pct: number | null;
+    holder_change_pct: number | null;
+    concentration_change_pct: number | null;
+    sell_pressure_change: number | null;
+    exit_impact_change_pct: number | null;
+    evidence: {
+      metric: string;
+      severity: string;
+      title: string;
+      detail: string;
+      change_pct?: number;
+    }[];
+    source: string;
+  } | null;
   exit_math?: {
     sizes: ExitMathResult[];
     default_100: ExitMathResult;
@@ -506,6 +526,38 @@ export function CaseFile({ data }: { data: CaseData }) {
           )}
         </Panel>
 
+        <Panel title="Risk / Death">
+          {data.risk?.available ? (
+            <>
+              <Row label="State" value={data.risk.severity} />
+              <Row label="Deterioration score" value={data.risk.deterioration_score != null ? `${data.risk.deterioration_score}/100` : "—"} />
+              <Row label="Confidence" value={data.risk.confidence} />
+              <div className="border-t border-border my-2" />
+              <Row label="Liquidity change" value={fmtPct(data.risk.liquidity_change_pct)} />
+              <Row label="1h volume change" value={fmtPct(data.risk.volume_change_pct)} />
+              <Row label="Holder count change" value={fmtPct(data.risk.holder_change_pct)} />
+              <Row label="Top-10 concentration change" value={fmtPct(data.risk.concentration_change_pct)} />
+              <Row label="Sell pressure change" value={data.risk.sell_pressure_change != null ? `${data.risk.sell_pressure_change > 0 ? "+" : ""}${data.risk.sell_pressure_change.toFixed(1)} pp` : "—"} />
+              <Row label="Exit impact change" value={fmtPct(data.risk.exit_impact_change_pct)} />
+              <div className="border-t border-border my-2" />
+              {data.risk.evidence.length > 0 ? (
+                <ul className="space-y-2">
+                  {data.risk.evidence.slice(0, 5).map((item, index) => (
+                    <li key={`${item.metric}-${index}`}>
+                      <p className="text-[12px] font-medium">{item.title}</p>
+                      <p className="text-[10px] text-secondary leading-relaxed mt-0.5">{item.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[10px] text-secondary">No deterioration trigger crossed in the available history.</p>
+              )}
+              <p className="text-[10px] text-secondary mt-2 leading-relaxed">This is a change-detection layer, not a prediction of token death. Single snapshots are not treated as proof of deterioration.</p>
+            </>
+          ) : (
+            <Unavailable reason="Historical risk data is unavailable." />
+          )}
+        </Panel>
         <Panel title="Evidence">
           {data.evidence && data.evidence.length > 0 ? (
             <ul className="space-y-3">
