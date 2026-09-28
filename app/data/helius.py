@@ -113,3 +113,4 @@ def _stub_metadata(mint: str) -> dict[str, Any]:
         "ownership": {},
         "raw": {},
     }
+\n\nasync def get_recent_address_transactions(address: str, limit: int = 100) -> list[dict[str, Any]]:\n    """Fetch recent parsed transactions for a wallet address."""\n    settings = get_settings()\n    if not settings.helius_api_key:\n        return []\n    url = f"https://api.helius.xyz/v0/addresses/{address}/transactions"\n    params = {"api-key": settings.helius_api_key, "limit": min(limit, 100)}\n    try:\n        async with httpx.AsyncClient(timeout=15.0) as client:\n            resp = await client.get(url, params=params)\n            resp.raise_for_status()\n            data = resp.json()\n            return data if isinstance(data, list) else []\n    except Exception as e:\n        logger.warning("Helius wallet transactions failed for %s: %s", address, e)\n        return []\n
