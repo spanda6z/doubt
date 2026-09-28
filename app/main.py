@@ -28,6 +28,7 @@ from app.data.helius import get_recent_token_transactions, get_recent_address_tr
 from app.db import check_db
 from app.models import HealthResponse, VerdictResponse, WebhookAck
 from app.rate_limit import verdict_limiter
+from app.routes.alerts import router as alerts_router
 from app.services.verdict import build_verdict
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,8 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
+
+app.include_router(alerts_router)
 
 app.add_middleware(
     CORSMiddleware,
