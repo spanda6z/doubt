@@ -53,6 +53,30 @@ type CaseData = {
     sells_1h: number | null;
     buy_sell_ratio_1h: number | null;
   } | null;
+  flow_timeline?: {
+    available: boolean;
+    source?: string;
+    windows: {
+      window: string;
+      available: boolean;
+      buy_pressure?: number | null;
+      net_flow_usd?: number | null;
+      unique_buyers?: number | null;
+      unique_sellers?: number | null;
+      confidence?: string | null;
+      source?: string | null;
+      signals: string[];
+      changes?: {
+        buy_pressure_pp?: number | null;
+        net_flow_usd?: number | null;
+        buy_volume_pct?: number | null;
+        sell_volume_pct?: number | null;
+        unique_buyers?: number | null;
+        unique_sellers?: number | null;
+      };
+      reason?: string;
+    }[];
+  } | null;
   holders?: {
     available: boolean;
     reason?: string | null;
@@ -121,6 +145,26 @@ type CaseData = {
 };
 
 const SIZES = [25, 50, 100, 250, 500, 1000];
+
+const FLOW_SIGNAL_LABEL: Record<string, string> = {
+  BUYING_ACCELERATING: "Buying accelerating",
+  SELLING_ACCELERATING: "Selling accelerating",
+  BUYER_COUNT_CONTRACTING: "Buyer count contracting",
+  SELLER_COUNT_EXPANDING: "Seller count expanding",
+  NET_FLOW_REVERSAL: "Net flow reversal",
+  BUY_PRESSURE_RISING: "Buy pressure rising",
+  BUY_PRESSURE_FALLING: "Buy pressure falling",
+  INSUFFICIENT_DATA: "Insufficient history",
+};
+
+function flowSignalClass(signal: string) {
+  if (signal === "INSUFFICIENT_DATA") return "text-secondary border-border";
+  if (signal.includes("SELL") || signal.includes("CONTRACTING") || signal.includes("FALLING") || signal.includes("REVERSAL")) {
+    return "text-caution border-caution/30 bg-caution/5";
+  }
+  return "text-safe border-safe/30 bg-safe/5";
+}
+
 
 const SEV: Record<string, string> = {
   info: "text-secondary",
@@ -411,6 +455,62 @@ export function CaseFile({ data }: { data: CaseData }) {
             </>
           ) : (
             <Unavailable reason="Transaction flow not fully available from market feed." />
+          )}
+        </Panel>
+
+        <Panel title="Flow timeline">
+          {data.flow_timeline?.windows?.length ? (
+            <div className="space-y-2">
+              {data.flow_timeline.windows.map((item) => (
+                <div key={item.window} className="border border-border rounded-md p-2.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-medium tabular">{item.window}</span>
+                    <span className="text-[9px] uppercase tracking-wide text-secondary">
+                      {item.available ? item.confidence || "observed" : "no history"}
+                    </span>
+                  </div>
+                  {item.available ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Buy pressure</p>
+                          <p className="text-xs tabular mt-0.5">{item.buy_pressure != null ? item.buy_pressure.toFixed(1) + "%" : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Net flow</p>
+                          <p className="text-xs tabular mt-0.5">{item.net_flow_usd != null ? fmtUsd(item.net_flow_usd) : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Buyers / sellers</p>
+                          <p className="text-xs tabular mt-0.5">{item.unique_buyers ?? "—"} / {item.unique_sellers ?? "—"}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {item.signals.map((signal) => (
+                          <span key={signal} className={"text-[9px] px-1.5 py-0.5 rounded border " + flowSignalClass(signal)}>
+                            {FLOW_SIGNAL_LABEL[signal] || signal}
+                          </span>
+                        ))}
+                      </div>
+                      {item.changes ? (
+                        <p className="text-[9px] text-secondary mt-2 leading-relaxed">
+                          Pressure {item.changes.buy_pressure_pp != null ? (item.changes.buy_pressure_pp >= 0 ? "+" : "") + item.changes.buy_pressure_pp.toFixed(1) + " pp" : "—"} ·
+                          Buy vol {item.changes.buy_volume_pct != null ? (item.changes.buy_volume_pct >= 0 ? "+" : "") + item.changes.buy_volume_pct.toFixed(0) + "%" : "—"} ·
+                          Sell vol {item.changes.sell_volume_pct != null ? (item.changes.sell_volume_pct >= 0 ? "+" : "") + item.changes.sell_volume_pct.toFixed(0) + "%" : "—"}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-secondary leading-relaxed">{item.reason || "No persisted snapshot far enough back to compare."}</p>
+                  )}
+                </div>
+              ))}
+              <p className="text-[10px] text-secondary leading-relaxed">
+                Timeline compares the latest persisted flow observation with an earlier persisted observation at or before each window. It reports changes only; it does not predict price or classify wallets.
+              </p>
+            </div>
+          ) : (
+            <Unavailable reason="No persisted flow snapshots yet. Open this case again as observations accumulate." />
           )}
         </Panel>
 
