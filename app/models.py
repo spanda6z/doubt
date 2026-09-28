@@ -36,10 +36,18 @@ class ReverseFlow(BaseModel):
     top_sellers: list[TopSeller] = Field(default_factory=list)
     sniper_offload_count: int = 0
     dev_wallet_status: str = "unknown"
+    buys: int = 0
+    sells: int = 0
+    unique_buyers: int = 0
+    unique_sellers: int = 0
+    buy_pressure: float = 50.0
+    confidence: ConfidenceType = "LOW"
+    source: str = "unavailable"
 
 
 class DeathData(BaseModel):
     narrative_tag: str = "other"
+    age_basis: str = "unavailable"
     stage: str = "UNKNOWN"
     median_lifespan_minutes: int = 0
     current_age_minutes: int = 0

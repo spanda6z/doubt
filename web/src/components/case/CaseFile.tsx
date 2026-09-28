@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fmtAge, fmtPct, fmtUsd, shortCa } from "@/lib/format";
 import { Panel, Row, Unavailable } from "./Panel";
@@ -35,18 +35,100 @@ type CaseData = {
   } | null;
   flow?: {
     available: boolean;
+    source?: string;
+    observed?: {
+      buys?: number;
+      sells?: number;
+      buy_volume_usd?: number;
+      sell_volume_usd?: number;
+      net_flow_usd?: number;
+      buy_pressure?: number;
+      unique_buyers?: number;
+      unique_sellers?: number;
+      confidence?: string;
+    } | null;
     buys_5m: number | null;
     sells_5m: number | null;
     buys_1h: number | null;
     sells_1h: number | null;
     buy_sell_ratio_1h: number | null;
   } | null;
-  holders?: { available: boolean; reason?: string } | null;
-  dev?: { available: boolean; reason?: string } | null;
+  flow_timeline?: {
+    available: boolean;
+    source?: string;
+    windows: {
+      window: string;
+      available: boolean;
+      buy_pressure?: number | null;
+      net_flow_usd?: number | null;
+      unique_buyers?: number | null;
+      unique_sellers?: number | null;
+      confidence?: string | null;
+      source?: string | null;
+      signals: string[];
+      changes?: {
+        buy_pressure_pp?: number | null;
+        net_flow_usd?: number | null;
+        buy_volume_pct?: number | null;
+        sell_volume_pct?: number | null;
+        unique_buyers?: number | null;
+        unique_sellers?: number | null;
+      };
+      reason?: string;
+    }[];
+  } | null;
+  holders?: {
+    available: boolean;
+    reason?: string | null;
+    total?: number | null;
+    top10_pct?: number | null;
+    top20_pct?: number | null;
+    top25_pct?: number | null;
+    confidence?: string;
+    source?: string;
+    largest?: { rank: number; owner: string; pct: number | null }[];
+  } | null;
+  dev?: {
+    available: boolean;
+    reason?: string | null;
+    creator?: string | null;
+    authority_addresses?: string[];
+    related_mints?: string[];
+    earliest_observed_signature?: string | null;
+    confidence?: string;
+    source?: string;
+    disclaimer?: string;
+  } | null;
   contract?: {
     available: boolean;
     reason?: string;
+    mint_authority?: string | null;
+    freeze_authority?: string | null;
+    token_program?: string | null;
+    authorities?: { address: string; scopes: string[] }[];
+    source?: string;
     pool_dex?: string | null;
+  } | null;
+  market_history?: { available: boolean; candles: { timestamp: number; open: number; high: number; low: number; close: number; volume: number }[]; source: string };
+  risk?: {
+    available: boolean;
+    severity: string;
+    deterioration_score: number | null;
+    confidence: string;
+    liquidity_change_pct: number | null;
+    volume_change_pct: number | null;
+    holder_change_pct: number | null;
+    concentration_change_pct: number | null;
+    sell_pressure_change: number | null;
+    exit_impact_change_pct: number | null;
+    evidence: {
+      metric: string;
+      severity: string;
+      title: string;
+      detail: string;
+      change_pct?: number;
+    }[];
+    source: string;
   } | null;
   exit_math?: {
     sizes: ExitMathResult[];
@@ -64,6 +146,26 @@ type CaseData = {
 
 const SIZES = [25, 50, 100, 250, 500, 1000];
 
+const FLOW_SIGNAL_LABEL: Record<string, string> = {
+  BUYING_ACCELERATING: "Buying accelerating",
+  SELLING_ACCELERATING: "Selling accelerating",
+  BUYER_COUNT_CONTRACTING: "Buyer count contracting",
+  SELLER_COUNT_EXPANDING: "Seller count expanding",
+  NET_FLOW_REVERSAL: "Net flow reversal",
+  BUY_PRESSURE_RISING: "Buy pressure rising",
+  BUY_PRESSURE_FALLING: "Buy pressure falling",
+  INSUFFICIENT_DATA: "Insufficient history",
+};
+
+function flowSignalClass(signal: string) {
+  if (signal === "INSUFFICIENT_DATA") return "text-secondary border-border";
+  if (signal.includes("SELL") || signal.includes("CONTRACTING") || signal.includes("FALLING") || signal.includes("REVERSAL")) {
+    return "text-caution border-caution/30 bg-caution/5";
+  }
+  return "text-safe border-safe/30 bg-safe/5";
+}
+
+
 const SEV: Record<string, string> = {
   info: "text-secondary",
   low: "text-secondary",
@@ -75,6 +177,7 @@ const SEV: Record<string, string> = {
 export function CaseFile({ data }: { data: CaseData }) {
   const [size, setSize] = useState(100);
   const [custom, setCustom] = useState("");
+  const [watched, setWatched] = useState(false);
 
   const exit = useMemo(() => {
     if (!data.exit_math?.sizes) return null;
@@ -82,9 +185,30 @@ export function CaseFile({ data }: { data: CaseData }) {
     return fromLadder || data.exit_math.default_100;
   }, [data.exit_math, size]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("doubt:watchlist:v1");
+      const items = raw ? JSON.parse(raw) : [];
+      setWatched(items.some((item: { address: string }) => item.address === data.address));
+    } catch {}
+  }, [data.address]);
+
   function onCustom() {
     const n = Number(custom);
     if (n > 0) setSize(n);
+  }
+
+  function toggleWatch() {
+    try {
+      const raw = localStorage.getItem("doubt:watchlist:v1");
+      const items = raw ? JSON.parse(raw) : [];
+      const exists = items.some((item: { address: string }) => item.address === data.address);
+      const next = exists
+        ? items.filter((item: { address: string }) => item.address !== data.address)
+        : [{ address: data.address, symbol: data.symbol || "TOKEN", image_url: data.image_url || null, saved_at: new Date().toISOString(), alerts: true }, ...items].slice(0, 100);
+      localStorage.setItem("doubt:watchlist:v1", JSON.stringify(next));
+      setWatched(!exists);
+    } catch {}
   }
 
   if (!data.available) {
@@ -133,13 +257,14 @@ export function CaseFile({ data }: { data: CaseData }) {
               Solana · {fmtAge(data.age_minutes)} · {shortCa(data.address)}
             </p>
           </div>
-          <button
-            type="button"
-            className="text-[11px] text-secondary hover:text-primary shrink-0"
-            onClick={() => navigator.clipboard.writeText(data.address)}
-          >
-            Copy CA
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" className={watched ? "text-[11px] px-2.5 py-1 rounded-md border border-safe text-primary bg-safe/10" : "text-[11px] px-2.5 py-1 rounded-md border border-border text-secondary"} onClick={toggleWatch}>
+              {watched ? "Watching" : "Watch"}
+            </button>
+            <button type="button" className="text-[11px] text-secondary hover:text-primary" onClick={() => navigator.clipboard.writeText(data.address)}>
+              Copy CA
+            </button>
+          </div>
         </div>
       </header>
 
@@ -302,8 +427,21 @@ export function CaseFile({ data }: { data: CaseData }) {
         <Panel title="Flow">
           {data.flow?.available ? (
             <>
-              <Row label="Buys 1h (txns)" value={data.flow.buys_1h ?? "—"} />
-              <Row label="Sells 1h (txns)" value={data.flow.sells_1h ?? "—"} />
+              {data.flow.observed ? (
+                <>
+                  <Row label="Observed buys" value={data.flow.observed.buys ?? "—"} />
+                  <Row label="Observed sells" value={data.flow.observed.sells ?? "—"} />
+                  <Row label="Buy pressure" value={data.flow.observed.buy_pressure != null ? `${data.flow.observed.buy_pressure.toFixed(1)}%` : "—"} />
+                  <Row label="Net flow" value={data.flow.observed.net_flow_usd != null ? fmtUsd(data.flow.observed.net_flow_usd) : "—"} />
+                  <Row label="Unique buyers" value={data.flow.observed.unique_buyers ?? "—"} />
+                  <Row label="Unique sellers" value={data.flow.observed.unique_sellers ?? "—"} />
+                  <Row label="Confidence" value={data.flow.observed.confidence || "—"} />
+                  <p className="text-[10px] text-secondary mt-2">Observed from parsed on-chain transactions. No wallet is classified as smart money here.</p>
+                </>
+              ) : null}
+              <div className="border-t border-border my-2" />
+              <Row label="Buys 1h (market)" value={data.flow.buys_1h ?? "—"} />
+              <Row label="Sells 1h (market)" value={data.flow.sells_1h ?? "—"} />
               <Row
                 label="Buy / sell ratio"
                 value={
@@ -320,21 +458,254 @@ export function CaseFile({ data }: { data: CaseData }) {
           )}
         </Panel>
 
+        <Panel title="Flow timeline">
+          {data.flow_timeline?.windows?.length ? (
+            <div className="space-y-2">
+              {data.flow_timeline.windows.map((item) => (
+                <div key={item.window} className="border border-border rounded-md p-2.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-medium tabular">{item.window}</span>
+                    <span className="text-[9px] uppercase tracking-wide text-secondary">
+                      {item.available ? item.confidence || "observed" : "no history"}
+                    </span>
+                  </div>
+                  {item.available ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Buy pressure</p>
+                          <p className="text-xs tabular mt-0.5">{item.buy_pressure != null ? item.buy_pressure.toFixed(1) + "%" : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Net flow</p>
+                          <p className="text-xs tabular mt-0.5">{item.net_flow_usd != null ? fmtUsd(item.net_flow_usd) : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide text-secondary">Buyers / sellers</p>
+                          <p className="text-xs tabular mt-0.5">{item.unique_buyers ?? "—"} / {item.unique_sellers ?? "—"}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {item.signals.map((signal) => (
+                          <span key={signal} className={"text-[9px] px-1.5 py-0.5 rounded border " + flowSignalClass(signal)}>
+                            {FLOW_SIGNAL_LABEL[signal] || signal}
+                          </span>
+                        ))}
+                      </div>
+                      {item.changes ? (
+                        <p className="text-[9px] text-secondary mt-2 leading-relaxed">
+                          Pressure {item.changes.buy_pressure_pp != null ? (item.changes.buy_pressure_pp >= 0 ? "+" : "") + item.changes.buy_pressure_pp.toFixed(1) + " pp" : "—"} ·
+                          Buy vol {item.changes.buy_volume_pct != null ? (item.changes.buy_volume_pct >= 0 ? "+" : "") + item.changes.buy_volume_pct.toFixed(0) + "%" : "—"} ·
+                          Sell vol {item.changes.sell_volume_pct != null ? (item.changes.sell_volume_pct >= 0 ? "+" : "") + item.changes.sell_volume_pct.toFixed(0) + "%" : "—"}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-secondary leading-relaxed">{item.reason || "No persisted snapshot far enough back to compare."}</p>
+                  )}
+                </div>
+              ))}
+              <p className="text-[10px] text-secondary leading-relaxed">
+                Timeline compares the latest persisted flow observation with an earlier persisted observation at or before each window. It reports changes only; it does not predict price or classify wallets.
+              </p>
+            </div>
+          ) : (
+            <Unavailable reason="No persisted flow snapshots yet. Open this case again as observations accumulate." />
+          )}
+        </Panel>
+
         <Panel title="Holders">
-          <Unavailable reason={data.holders?.reason} />
+          {data.holders?.available ? (
+            <>
+              <Row label="Observed holders" value={data.holders.total ?? "—"} />
+              <Row
+                label="Top 10 concentration"
+                value={
+                  data.holders.top10_pct != null
+                    ? `${data.holders.top10_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row
+                label="Top 20 concentration"
+                value={
+                  data.holders.top20_pct != null
+                    ? `${data.holders.top20_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row
+                label="Top 25 concentration"
+                value={
+                  data.holders.top25_pct != null
+                    ? `${data.holders.top25_pct.toFixed(1)}%`
+                    : "—"
+                }
+              />
+              <Row label="Confidence" value={data.holders.confidence || "LOW"} />
+              {data.holders.largest && data.holders.largest.length > 0 ? (
+                <>
+                  <div className="border-t border-border my-2" />
+                  <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">
+                    Largest observed holders
+                  </p>
+                  {data.holders.largest.slice(0, 5).map((holder) => (
+                    <Row
+                      key={holder.rank}
+                      label={`#${holder.rank} ${shortCa(holder.owner)}`}
+                      value={
+                        holder.pct != null
+                          ? `${holder.pct.toFixed(2)}%`
+                          : "—"
+                      }
+                    />
+                  ))}
+                </>
+              ) : null}
+              <p className="text-[10px] text-secondary mt-2">
+                Concentration is computed from observed Helius token accounts. It
+                does not classify wallets or identify intent.
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.holders?.reason || undefined} />
+          )}
         </Panel>
 
         <Panel title="Dev trace">
-          <Unavailable reason={data.dev?.reason} />
+          {data.dev?.available ? (
+            <>
+              <Row
+                label="Creator candidate"
+                value={data.dev.creator ? shortCa(data.dev.creator) : "—"}
+              />
+              <Row label="Confidence" value={data.dev.confidence || "LOW"} />
+              <Row
+                label="Authority addresses"
+                value={data.dev.authority_addresses?.length ?? 0}
+              />
+              <Row
+                label="Related mints observed"
+                value={data.dev.related_mints?.length ?? 0}
+              />
+              {data.dev.related_mints && data.dev.related_mints.length > 0 ? (
+                <>
+                  <div className="border-t border-border my-2" />
+                  <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">
+                    Related activity
+                  </p>
+                  {data.dev.related_mints.slice(0, 5).map((mint) => (
+                    <Row key={mint} label={shortCa(mint)} value="observed" />
+                  ))}
+                </>
+              ) : null}
+              <p className="text-[10px] text-secondary mt-2 leading-relaxed">
+                {data.dev.disclaimer ||
+                  "Candidate creator evidence only. Observed related mints are not confirmed launches."}
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.dev?.reason || undefined} />
+          )}
         </Panel>
 
         <Panel title="Contract">
           {data.contract?.pool_dex ? (
             <Row label="Pool" value={data.contract.pool_dex} />
           ) : null}
-          <Unavailable reason={data.contract?.reason} />
+          {data.contract?.available ? (
+            <>
+              <Row
+                label="Mint authority"
+                value={
+                  data.contract.mint_authority
+                    ? shortCa(data.contract.mint_authority)
+                    : "none observed"
+                }
+              />
+              <Row
+                label="Freeze authority"
+                value={
+                  data.contract.freeze_authority
+                    ? shortCa(data.contract.freeze_authority)
+                    : "none observed"
+                }
+              />
+              <Row
+                label="Token program"
+                value={
+                  data.contract.token_program
+                    ? shortCa(data.contract.token_program)
+                    : "—"
+                }
+              />
+              <p className="text-[10px] text-secondary mt-2">
+                Authority state is reported from Helius asset metadata. “None
+                observed” means no matching authority was returned; it is not a
+                guarantee about historical state.
+              </p>
+            </>
+          ) : (
+            <Unavailable reason={data.contract?.reason} />
+          )}
         </Panel>
 
+        <Panel title="Price / Volume">
+          {data.market_history?.available && data.market_history.candles.length > 1 ? (
+            <div className="space-y-3">
+              <div className="h-28 flex items-end gap-[2px] overflow-hidden">
+                {data.market_history.candles.slice(-72).map((candle, i, arr) => {
+                  const lows = arr.map((x) => x.low).filter((x) => x > 0);
+                  const highs = arr.map((x) => x.high).filter((x) => x > 0);
+                  const lo = Math.min(...lows);
+                  const hi = Math.max(...highs);
+                  const range = Math.max(hi - lo, Number.EPSILON);
+                  const h = Math.max(8, ((candle.close - lo) / range) * 100);
+                  return (
+                    <div key={candle.timestamp || i} className="flex-1 min-w-[2px] h-full flex items-end">
+                      <div className="w-full bg-foreground/70 rounded-[1px]" style={{ height: `${h}%`, opacity: candle.close >= candle.open ? 0.9 : 0.35 }} title={new Date(candle.timestamp * 1000).toLocaleTimeString()} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between text-[10px] text-secondary"><span>5m candles · 24h</span><span>{data.market_history.source}</span></div>
+            </div>
+          ) : (
+            <Unavailable reason="Historical candles require Birdeye OHLCV data." />
+          )}
+        </Panel>
+        <Panel title="Risk / Death">
+          {data.risk?.available ? (
+            <>
+              <Row label="State" value={data.risk.severity} />
+              <Row label="Deterioration score" value={data.risk.deterioration_score != null ? `${data.risk.deterioration_score}/100` : "—"} />
+              <Row label="Confidence" value={data.risk.confidence} />
+              <div className="border-t border-border my-2" />
+              <Row label="Liquidity change" value={fmtPct(data.risk.liquidity_change_pct)} />
+              <Row label="1h volume change" value={fmtPct(data.risk.volume_change_pct)} />
+              <Row label="Holder count change" value={fmtPct(data.risk.holder_change_pct)} />
+              <Row label="Top-10 concentration change" value={fmtPct(data.risk.concentration_change_pct)} />
+              <Row label="Sell pressure change" value={data.risk.sell_pressure_change != null ? `${data.risk.sell_pressure_change > 0 ? "+" : ""}${data.risk.sell_pressure_change.toFixed(1)} pp` : "—"} />
+              <Row label="Exit impact change" value={fmtPct(data.risk.exit_impact_change_pct)} />
+              <div className="border-t border-border my-2" />
+              {data.risk.evidence.length > 0 ? (
+                <ul className="space-y-2">
+                  {data.risk.evidence.slice(0, 5).map((item, index) => (
+                    <li key={`${item.metric}-${index}`}>
+                      <p className="text-[12px] font-medium">{item.title}</p>
+                      <p className="text-[10px] text-secondary leading-relaxed mt-0.5">{item.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[10px] text-secondary">No deterioration trigger crossed in the available history.</p>
+              )}
+              <p className="text-[10px] text-secondary mt-2 leading-relaxed">This is a change-detection layer, not a prediction of token death. Single snapshots are not treated as proof of deterioration.</p>
+            </>
+          ) : (
+            <Unavailable reason="Historical risk data is unavailable." />
+          )}
+        </Panel>
         <Panel title="Evidence">
           {data.evidence && data.evidence.length > 0 ? (
             <ul className="space-y-3">

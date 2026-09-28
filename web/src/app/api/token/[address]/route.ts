@@ -145,33 +145,134 @@ export async function GET(
     });
   }
 
-  const holders = {
-    available: false,
-    reason:
-      "Holder data requires on-chain indexer (Helius). Not configured or unavailable.",
-    total: null as number | null,
-    top10_pct: null as number | null,
-    top25_pct: null as number | null,
-    largest: [] as { rank: number; pct: number | null }[],
-  };
+  let intelligence: Record<string, unknown> | null = null;
+  let holderIntelligence: Record<string, unknown> | null = null;
+  let devIntelligence: Record<string, unknown> | null = null;
+  let contractIntelligence: Record<string, unknown> | null = null;
+  let riskIntelligence: Record<string, unknown> | null = null;
+  let marketHistory: Record<string, unknown> | null = null;
+  let flowTimeline: Record<string, unknown> | null = null;
+  let alertsIntelligence: Record<string, unknown> | null = null;
+  try {
+    const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
+    if (baseUrl) {
+      const api = baseUrl.replace(/\/$/, "");
+      const [flowRes, holderRes, devRes, contractRes, riskRes, historyRes, timelineRes, alertsRes] = await Promise.all([
+        fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/contract/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/risk/" + address, { cache: "no-store" }),
+        fetch(api + "/v1/market/" + address + "/history?interval=5m&hours=24", { cache: "no-store" }),
+        fetch(api + "/v1/flow/" + address + "/timeline?windows=5m,15m,30m,1h&limit=50", { cache: "no-store" }),
+        fetch(api + "/v1/alerts/" + address + "?limit=50", { cache: "no-store" }),
+      ]);
+      if (flowRes.ok) intelligence = await flowRes.json();
+      if (holderRes.ok) holderIntelligence = await holderRes.json();
+      if (devRes.ok) devIntelligence = await devRes.json();
+      if (contractRes.ok) contractIntelligence = await contractRes.json();
+      if (riskRes.ok) riskIntelligence = await riskRes.json();
+      if (historyRes.ok) marketHistory = await historyRes.json();
+      if (timelineRes.ok) flowTimeline = await timelineRes.json();
+      if (alertsRes.ok) alertsIntelligence = await alertsRes.json();
+    }
+  } catch {
+    intelligence = null;
+    holderIntelligence = null;
+    devIntelligence = null;
+    contractIntelligence = null;
+    riskIntelligence = null;
+    marketHistory = null;
+    flowTimeline = null;
+    alertsIntelligence = null;
+  }
 
-  const dev = {
-    available: false,
-    reason:
-      "Deployer history requires on-chain indexer (Helius). Not configured or unavailable.",
-    creator: null as string | null,
-    previous_tokens: null as number | null,
-  };
+  const holders = holderIntelligence
+    ? {
+        available: true,
+        reason: null,
+        total: (holderIntelligence.holder_count as number) ?? null,
+        top10_pct: (holderIntelligence.top10_pct as number) ?? null,
+        top20_pct: (holderIntelligence.top20_pct as number) ?? null,
+        top25_pct: (holderIntelligence.top25_pct as number) ?? null,
+        confidence: (holderIntelligence.confidence as string) ?? "LOW",
+        source: (holderIntelligence.source as string) ?? "unavailable",
+        largest: Array.isArray(holderIntelligence.largest)
+          ? holderIntelligence.largest.map((row: any) => ({
+              rank: Number(row.rank),
+              owner: String(row.owner),
+              pct: typeof row.pct === "number" ? row.pct : null,
+            }))
+          : [],
+      }
+    : {
+        available: false,
+        reason:
+          "Holder data requires Helius token-account indexing. Not configured or unavailable.",
+        total: null as number | null,
+        top10_pct: null as number | null,
+        top20_pct: null as number | null,
+        top25_pct: null as number | null,
+        confidence: "LOW",
+        source: "unavailable",
+        largest: [] as { rank: number; owner: string; pct: number | null }[],
+      };
 
-  const contract = {
-    available: false,
-    reason:
-      "Authority checks require on-chain read (Helius). Not configured or unavailable.",
-    mint_authority: null as string | null,
-    freeze_authority: null as string | null,
-    token_program: null as string | null,
-    pool_dex: pair.dexId || null,
-  };
+  const dev = devIntelligence
+    ? {
+        available: true,
+        reason: null,
+        creator: (devIntelligence.creator_candidate as string) ?? null,
+        authority_addresses: Array.isArray(devIntelligence.authority_addresses)
+          ? devIntelligence.authority_addresses.map(String)
+          : [],
+        related_mints: Array.isArray(devIntelligence.observed_related_mints)
+          ? devIntelligence.observed_related_mints.map(String)
+          : [],
+        earliest_observed_signature:
+          (devIntelligence.earliest_observed_signature as string) ?? null,
+        confidence: (devIntelligence.confidence as string) ?? "LOW",
+        source: (devIntelligence.source as string) ?? "unavailable",
+        disclaimer:
+          (devIntelligence.disclaimer as string) ??
+          "Candidate creator evidence only.",
+      }
+    : {
+        available: false,
+        reason:
+          "Creator trace requires Helius asset and transaction data. Not configured or unavailable.",
+        creator: null as string | null,
+        authority_addresses: [] as string[],
+        related_mints: [] as string[],
+        earliest_observed_signature: null as string | null,
+        confidence: "LOW",
+        source: "unavailable",
+        disclaimer: "Candidate creator evidence only.",
+      };
+
+  const contract = contractIntelligence
+    ? {
+        available: Boolean(contractIntelligence.available),
+        reason: null,
+        mint_authority: (contractIntelligence.mint_authority as string) ?? null,
+        freeze_authority: (contractIntelligence.freeze_authority as string) ?? null,
+        token_program: (contractIntelligence.token_program as string) ?? null,
+        authorities: Array.isArray(contractIntelligence.authorities)
+          ? contractIntelligence.authorities
+          : [],
+        source: (contractIntelligence.source as string) ?? "unavailable",
+        pool_dex: pair.dexId || null,
+      }
+    : {
+        available: false,
+        reason: "Authority checks require Helius asset data. Not configured or unavailable.",
+        mint_authority: null as string | null,
+        freeze_authority: null as string | null,
+        token_program: null as string | null,
+        authorities: [] as unknown[],
+        source: "unavailable",
+        pool_dex: pair.dexId || null,
+      };
 
   const body = {
     address,
@@ -207,7 +308,8 @@ export async function GET(
       })),
     },
     flow: {
-      available: buys1h != null || sells1h != null,
+      available: Boolean(intelligence) || buys1h != null || sells1h != null,
+      source: intelligence ? "helius_observed" : "market_feed",
       buys_5m: buys5m,
       sells_5m: sells5m,
       buys_1h: buys1h,
@@ -215,10 +317,53 @@ export async function GET(
       buy_sell_ratio_1h: buySellRatio,
       volume_5m_usd: vol5m,
       volume_1h_usd: vol1h,
+      observed: intelligence,
     },
     holders,
     dev,
     contract,
+    market_history: marketHistory || { available: false, candles: [], source: "unavailable" },
+    flow_timeline: flowTimeline || { available: false, windows: [], source: "unavailable" },
+    alerts: alertsIntelligence || { available: false, alerts: [], count: 0, source: "unavailable" },
+    risk: riskIntelligence
+      ? {
+          available: true,
+          severity: String(riskIntelligence.severity || "INSUFFICIENT DATA"),
+          deterioration_score:
+            typeof riskIntelligence.deterioration_score === "number"
+              ? riskIntelligence.deterioration_score
+              : null,
+          confidence: String(riskIntelligence.confidence || "LOW"),
+          liquidity_change_pct:
+            typeof riskIntelligence.liquidity_change_pct === "number"
+              ? riskIntelligence.liquidity_change_pct
+              : null,
+          volume_change_pct:
+            typeof riskIntelligence.volume_change_pct === "number"
+              ? riskIntelligence.volume_change_pct
+              : null,
+          holder_change_pct:
+            typeof riskIntelligence.holder_change_pct === "number"
+              ? riskIntelligence.holder_change_pct
+              : null,
+          concentration_change_pct:
+            typeof riskIntelligence.concentration_change_pct === "number"
+              ? riskIntelligence.concentration_change_pct
+              : null,
+          sell_pressure_change:
+            typeof riskIntelligence.sell_pressure_change === "number"
+              ? riskIntelligence.sell_pressure_change
+              : null,
+          exit_impact_change_pct:
+            typeof riskIntelligence.exit_impact_change_pct === "number"
+              ? riskIntelligence.exit_impact_change_pct
+              : null,
+          evidence: Array.isArray(riskIntelligence.evidence)
+            ? riskIntelligence.evidence
+            : [],
+          source: String(riskIntelligence.source || "unavailable"),
+        }
+      : null,
     exit_math: {
       sizes: ladder,
       default_100: exit100,
