@@ -19,6 +19,7 @@ from app.cache import check_redis, get_cached_verdict, set_cached_verdict
 from app.config import get_settings
 from app.data import get_token_overview
 from app.scoring.flow_engine import compute_flow
+from app.scoring.flow_timeline import build_flow_timeline, WINDOWS_SECONDS
 from app.scoring.holder_engine import compute_holders
 from app.scoring.dev_engine import compute_dev
 from app.scoring.death_engine import compute_risk
@@ -230,6 +231,74 @@ async def get_flow_history(mint: str, limit: int = 12) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Flow history unavailable for %s: %s", mint, exc)
         return {"mint": mint, "snapshots": [], "available": False}
+
+
+
+
+@app.get("/v1/flow/{mint}/timeline")
+async def get_flow_timeline(
+    mint: str,
+    windows: str = "5m,15m,30m,1h",
+    limit: int = 50,
+) -> dict[str, Any]:
+    mint = mint.strip()
+    if not MINT_RE.match(mint):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana mint address.")
+
+    requested = [item.strip() for item in windows.split(",") if item.strip()]
+    requested = [item for item in requested if item in WINDOWS_SECONDS]
+    if not requested:
+        raise HTTPException(status_code=400, detail="Use supported windows: 5m, 15m, 30m, 1h.")
+    requested = list(dict.fromkeys(requested))
+    limit = max(2, min(limit, 100))
+
+    try:
+        from sqlalchemy import text
+        from app.db import get_session
+
+        rows = []
+        async for session in get_session():
+            result = await session.execute(
+                text("""
+                    SELECT ts, buys, sells, buy_volume_usd, sell_volume_usd,
+                           net_flow_usd, buy_pressure, unique_buyers,
+                           unique_sellers, liquidity_usd, volume_1h_usd,
+                           volume_24h_usd, confidence, source
+                    FROM flow_snapshots
+                    WHERE token_address = :token_address
+                    ORDER BY ts DESC
+                    LIMIT :limit
+                """),
+                {"token_address": mint, "limit": limit},
+            )
+            rows = [dict(row._mapping) for row in result.fetchall()]
+            break
+
+        timeline = build_flow_timeline(rows, requested)
+        return {
+            "mint": mint,
+            "available": any(row.get("available") for row in timeline),
+            "windows": timeline,
+            "snapshot_count": len(rows),
+            "source": "flow_snapshots" if rows else "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("Flow timeline unavailable for %s: %s", mint, exc)
+        return {
+            "mint": mint,
+            "available": False,
+            "windows": [
+                {
+                    "window": window,
+                    "available": False,
+                    "signals": ["INSUFFICIENT_DATA"],
+                    "reason": "Flow snapshot history is unavailable.",
+                }
+                for window in requested
+            ],
+            "snapshot_count": 0,
+            "source": "unavailable",
+        }
 
 
 @app.get("/v1/risk/{mint}")
