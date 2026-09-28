@@ -152,11 +152,12 @@ export async function GET(
   let riskIntelligence: Record<string, unknown> | null = null;
   let marketHistory: Record<string, unknown> | null = null;
   let flowTimeline: Record<string, unknown> | null = null;
+  let alertsIntelligence: Record<string, unknown> | null = null;
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
       const api = baseUrl.replace(/\\/$/, "");
-      const [flowRes, holderRes, devRes, contractRes, riskRes, historyRes, timelineRes] = await Promise.all([
+      const [flowRes, holderRes, devRes, contractRes, riskRes, historyRes, timelineRes, alertsRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
         fetch(api + "/v1/dev/" + address, { cache: "no-store" }),
@@ -164,6 +165,7 @@ export async function GET(
         fetch(api + "/v1/risk/" + address, { cache: "no-store" }),
         fetch(api + "/v1/market/" + address + "/history?interval=5m&hours=24", { cache: "no-store" }),
         fetch(api + "/v1/flow/" + address + "/timeline?windows=5m,15m,30m,1h&limit=50", { cache: "no-store" }),
+        fetch(api + "/v1/alerts/" + address + "?limit=50", { cache: "no-store" }),
       ]);
       if (flowRes.ok) intelligence = await flowRes.json();
       if (holderRes.ok) holderIntelligence = await holderRes.json();
@@ -172,6 +174,7 @@ export async function GET(
       if (riskRes.ok) riskIntelligence = await riskRes.json();
       if (historyRes.ok) marketHistory = await historyRes.json();
       if (timelineRes.ok) flowTimeline = await timelineRes.json();
+      if (alertsRes.ok) alertsIntelligence = await alertsRes.json();
     }
   } catch {
     intelligence = null;
@@ -181,6 +184,7 @@ export async function GET(
     riskIntelligence = null;
     marketHistory = null;
     flowTimeline = null;
+    alertsIntelligence = null;
   }
 
   const holders = holderIntelligence
@@ -320,6 +324,7 @@ export async function GET(
     contract,
     market_history: marketHistory || { available: false, candles: [], source: "unavailable" },
     flow_timeline: flowTimeline || { available: false, windows: [], source: "unavailable" },
+    alerts: alertsIntelligence || { available: false, alerts: [], count: 0, source: "unavailable" },
     risk: riskIntelligence
       ? {
           available: true,
