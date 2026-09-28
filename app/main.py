@@ -429,6 +429,57 @@ async def get_contract(mint: str) -> dict[str, Any]:
     }
 
 
+
+@app.get("/v1/wallet/{address}")
+async def get_wallet(address: str, limit: int = 100) -> dict[str, Any]:
+    address = address.strip()
+    if not re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", address):
+        raise HTTPException(status_code=400, detail="That doesn't look like a Solana wallet address.")
+    limit = max(1, min(limit, 100))
+    transactions = await get_recent_address_transactions(address, limit=limit)
+    activity: list[dict[str, Any]] = []
+    token_map: dict[str, dict[str, Any]] = {}
+    for tx in transactions:
+        if not isinstance(tx, dict):
+            continue
+        signature = str(tx.get("signature") or tx.get("transactionSignature") or "")
+        timestamp = tx.get("timestamp") or tx.get("blockTime")
+        try:
+            timestamp = int(timestamp) if timestamp is not None else None
+        except (TypeError, ValueError):
+            timestamp = None
+        description = str(tx.get("description") or "Observed transaction")
+        is_swap = "swap" in description.lower()
+        found_transfer = False
+        for transfer in tx.get("tokenTransfers") or []:
+            if not isinstance(transfer, dict):
+                continue
+            mint = transfer.get("mint")
+            if not mint or mint == "So11111111111111111111111111111111111111112":
+                continue
+            incoming = str(transfer.get("toUserAccount") or "") == address
+            outgoing = str(transfer.get("fromUserAccount") or "") == address
+            if not (incoming or outgoing):
+                continue
+            found_transfer = True
+            kind = "BUY" if is_swap and incoming else "SELL" if is_swap and outgoing else "RECEIVE" if incoming else "SEND"
+            item = token_map.setdefault(str(mint), {"mint": str(mint), "buys": 0, "sells": 0, "receives": 0, "sends": 0, "observations": 0, "first_seen": timestamp, "last_seen": timestamp})
+            item["observations"] += 1
+            if timestamp is not None:
+                item["first_seen"] = timestamp if item["first_seen"] is None else min(item["first_seen"], timestamp)
+                item["last_seen"] = timestamp if item["last_seen"] is None else max(item["last_seen"], timestamp)
+            item[{"BUY":"buys","SELL":"sells","RECEIVE":"receives","SEND":"sends"}[kind]] += 1
+            activity.append({"signature": signature, "timestamp": timestamp, "kind": kind, "mint": str(mint), "amount": transfer.get("tokenAmount"), "description": description})
+        if not found_transfer and signature:
+            activity.append({"signature": signature, "timestamp": timestamp, "kind": "SWAP" if is_swap else "TRANSACTION", "mint": None, "amount": None, "description": description})
+    activity.sort(key=lambda x: x.get("timestamp") or 0, reverse=True)
+    tokens = sorted(token_map.values(), key=lambda x: x.get("last_seen") or 0, reverse=True)
+    times = [x["timestamp"] for x in activity if x.get("timestamp") is not None]
+    buys = sum(1 for x in activity if x["kind"] == "BUY")
+    sells = sum(1 for x in activity if x["kind"] == "SELL")
+    return {"address": address, "available": bool(transactions), "transactions": len(transactions), "unique_tokens": len(tokens), "buys": buys, "sells": sells, "first_seen": min(times) if times else None, "last_seen": max(times) if times else None, "confidence": "HIGH" if len(transactions) >= 50 else "MEDIUM" if len(transactions) >= 10 else "LOW", "source": "helius_enhanced_transactions" if transactions else "unavailable", "tokens": tokens[:100], "activity": activity[:100]}
+
+
 @app.post("/webhooks/helius", response_model=WebhookAck)
 async def helius_webhook(request: Request) -> WebhookAck:
     """
