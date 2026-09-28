@@ -97,6 +97,61 @@ async def get_alerts(mint: str, limit: int = 50) -> dict[str, Any]:
         }
         alerts = build_alerts(timeline, risk)
 
+        # Persist observations with a short dedupe window so opening a page
+        # does not create a new event on every request.
+        try:
+            from sqlalchemy import text
+
+            async for session in get_session():
+                for alert in alerts:
+                    exists = await session.execute(
+                        text("""
+                            SELECT 1
+                            FROM alert_events
+                            WHERE token_address = :token_address
+                              AND alert_type = :alert_type
+                              AND signal = :signal
+                              AND COALESCE(window, '') = COALESCE(:window, '')
+                              AND observed_at >= NOW() - INTERVAL '15 minutes'
+                            LIMIT 1
+                        """),
+                        {
+                            "token_address": mint,
+                            "alert_type": alert["type"],
+                            "signal": alert["signal"],
+                            "window": alert.get("window"),
+                        },
+                    )
+                    if exists.first():
+                        continue
+                    await session.execute(
+                        text("""
+                            INSERT INTO alert_events
+                              (token_address, alert_type, signal, window, severity,
+                               title, detail, confidence, source)
+                            VALUES
+                              (:token_address, :alert_type, :signal, :window, :severity,
+                               :title, :detail, :confidence, :source)
+                        """),
+                        {
+                            "token_address": mint,
+                            "alert_type": alert["type"],
+                            "signal": alert["signal"],
+                            "window": alert.get("window"),
+                            "severity": alert["severity"],
+                            "title": alert["title"],
+                            "detail": alert["detail"],
+                            "confidence": alert.get("confidence"),
+                            "source": alert.get("source"),
+                        },
+                    )
+                await session.commit()
+                break
+        except Exception:
+            # Alert delivery remains read-only if the optional event table has
+            # not been migrated yet.
+            pass
+
         return {
             "mint": mint,
             "available": bool(alerts),
