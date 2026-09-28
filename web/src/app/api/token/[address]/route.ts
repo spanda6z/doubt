@@ -156,7 +156,7 @@ export async function GET(
   try {
     const baseUrl = process.env.DOUBT_API_URL || process.env.NEXT_PUBLIC_DOUBT_API_URL;
     if (baseUrl) {
-      const api = baseUrl.replace(/\\/$/, "");
+      const api = baseUrl.replace(/\/$/, "");
       const [flowRes, holderRes, devRes, contractRes, riskRes, historyRes, timelineRes, alertsRes] = await Promise.all([
         fetch(api + "/v1/flow/" + address, { cache: "no-store" }),
         fetch(api + "/v1/holders/" + address, { cache: "no-store" }),
